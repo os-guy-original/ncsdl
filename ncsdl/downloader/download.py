@@ -1,26 +1,36 @@
-"""Download logic with corruption detection and automatic name fixing."""
+"""Download logic with video ID tagging and rename detection.
 
+Each downloaded file gets a custom tag: `ncsdl_id` (YouTube video ID).
+This is the single source of truth for matching files to videos.
+"""
+
+import json
 import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Optional
 
-from ..styles import ParsedTitle, build_tag_values
+from ..styles import build_tag_values
 from .files import (
     SUPPORTED_FORMATS,
-    find_and_fix_broken_name,
+    get_ncsdl_id,
     is_audio_valid,
     sanitize_filename,
 )
 from .search import VideoInfo
+from .track import (
+    load_track,
+    record_download,
+    remove_entry,
+    save_track,
+)
 
 
-# Tag handlers keyed by file extension
-def _tag_mp3(path: str, tags: dict[str, str]) -> None:
-    """Set ID3 tags on an MP3 file."""
+# --- Metadata tag writers ---
+
+def _tag_mp3(path: str, tags: dict[str, str], video_id: str) -> None:
     from mutagen.mp3 import MP3
-    from mutagen.id3 import ID3, ID3NoHeaderError
+    from mutagen.id3 import ID3, ID3NoHeaderError, TXXX
 
     try:
         audio = MP3(path, ID3=ID3)
@@ -32,11 +42,11 @@ def _tag_mp3(path: str, tags: dict[str, str]) -> None:
     audio["TPE1"] = ID3(encoding=3, text=[tags["artist"]])
     audio["TALB"] = ID3(encoding=3, text=[tags["album"]])
     audio["TCON"] = ID3(encoding=3, text=[tags["genre"]])
+    audio["ncsdl_id"] = TXXX(encoding=3, desc="ncsdl_id", text=[video_id])
     audio.save()
 
 
-def _tag_m4a(path: str, tags: dict[str, str]) -> None:
-    """Set tags on an M4A file."""
+def _tag_m4a(path: str, tags: dict[str, str], video_id: str) -> None:
     from mutagen.mp4 import MP4
 
     audio = MP4(path)
@@ -45,11 +55,11 @@ def _tag_m4a(path: str, tags: dict[str, str]) -> None:
     audio["\xa9ART"] = tags["artist"]
     audio["\xa9alb"] = tags["album"]
     audio["\xa9gen"] = tags["genre"]
+    audio["----:com.apple.iTunes:ncsdl_id"] = [video_id.encode("utf-8")]
     audio.save()
 
 
-def _tag_vorbis(path: str, tags: dict[str, str]) -> None:
-    """Set tags on a FLAC or OGG file (both use Vorbis comments)."""
+def _tag_vorbis(path: str, tags: dict[str, str], video_id: str) -> None:
     from mutagen.flac import FLAC
     from mutagen.oggvorbis import OggVorbis
 
@@ -59,6 +69,7 @@ def _tag_vorbis(path: str, tags: dict[str, str]) -> None:
     audio["artist"] = tags["artist"]
     audio["album"] = tags["album"]
     audio["genre"] = tags["genre"]
+    audio["ncsdl_id"] = video_id
     audio.save()
 
 
@@ -71,59 +82,118 @@ _TAG_HANDLERS: dict[str, tuple[callable, str]] = {
 }
 
 
-def _embed_metadata_post(filepath: str, parsed: ParsedTitle) -> bool:
-    """Embed clean metadata into a downloaded file using mutagen."""
+def _embed_metadata(filepath: str, parsed, video_id: str) -> bool:
+    """Embed clean metadata + video ID tag into an audio file."""
     ext = os.path.splitext(filepath)[1].lower()
-    handler_info = _TAG_HANDLERS.get(ext)
-    if handler_info is None:
+    handler = _TAG_HANDLERS.get(ext)
+    if handler is None:
         return False
 
-    tag_func, _ = handler_info
+    tag_func, _ = handler
     tags = build_tag_values(parsed)
 
     try:
-        tag_func(filepath, tags)
+        tag_func(filepath, tags, video_id)
         return True
     except Exception as exc:
         print(f"metadata embed warning: {exc}", file=sys.stderr)
         return False
 
 
-def _resolve_existing(
+# --- Rename logic ---
+
+def _scan_for_misnamed(
+    output_dir: str,
+    safe_name: str,
+    ext: str,
+) -> dict[str, str]:
+    """Scan directory for audio files and read their ncsdl_id tags.
+
+    Returns {video_id: filepath} for files whose expected name doesn't match.
+    Excludes the correctly-named file for the current video.
+    """
+    dir_path = Path(output_dir)
+    if not dir_path.is_dir():
+        return {}
+
+    result = {}
+    correct_path = os.path.join(output_dir, f"{safe_name}.{ext}")
+
+    for f in dir_path.iterdir():
+        if not f.is_file() or f.suffix.lower() not in {".mp3", ".m4a", ".flac", ".opus", ".ogg"}:
+            continue
+        if str(f) == correct_path:
+            continue
+
+        vid = get_ncsdl_id(str(f))
+        if vid:
+            result[vid] = str(f)
+
+    return result
+
+
+def _check_by_id(
     output_dir: str,
     video: VideoInfo,
     safe_name: str,
     ext: str,
-) -> tuple[bool, Optional[str]]:
-    """Check if a valid copy of this video already exists.
+    track_data: dict[str, dict],
+    misnamed: dict[str, str],
+) -> tuple[bool, str]:
+    """Check if this video's file already exists (correctly named or misnamed).
 
-    Handles:
-    - Correctly named file exists and is valid -> skip
-    - Correctly named file exists but corrupted -> delete
-    - File exists with old/broken name but valid -> rename to correct name
-    - No file found -> return False
+    Uses ncsdl_id tags on disk files as the primary match.
+    Falls back to tracking data.
 
     Returns (should_skip, message).
     """
+    vid = video.video_id
     expected_path = os.path.join(output_dir, f"{safe_name}.{ext}")
 
-    # Check correctly named file
+    # 1. Check if correctly named file exists
     if os.path.exists(expected_path):
-        if is_audio_valid(expected_path):
-            return True, None  # Valid, skip
-        # Corrupted - delete
-        os.remove(expected_path)
+        file_id = get_ncsdl_id(expected_path)
+        if file_id == vid:
+            if is_audio_valid(expected_path):
+                return True, "skip"
+            os.remove(expected_path)
+            remove_entry(output_dir, vid)
+            return False, "deleted-corrupted"
 
-    # Scan for matching file by video title
-    found, action = find_and_fix_broken_name(
-        output_dir, video.video_id, video.title, safe_name, ext
-    )
-    if found:
-        if action == "valid":
-            return True, None
-        return True, action  # "renamed: ..." or "deleted: ..."
+    # 2. Check if a misnamed file has this video's ID tag
+    if vid in misnamed:
+        old_path = misnamed[vid]
+        if is_audio_valid(old_path):
+            Path(old_path).rename(expected_path)
+            return True, f"renamed: {Path(old_path).name}"
+        else:
+            os.remove(old_path)
+            remove_entry(output_dir, vid)
+            return False, f"deleted-corrupted: {Path(old_path).name}"
 
-    return False, None
+    # 3. Fallback: check tracking data
+    entry = track_data.get(vid)
+    if entry:
+        tracked_expected = entry.get("expected", "")
+        tracked_path = os.path.join(output_dir, f"{tracked_expected}.{ext}")
+
+        if tracked_expected == safe_name:
+            # Tracking says it should be correctly named, but file isn't there
+            remove_entry(output_dir, vid)
+            return False, ""
+
+        if os.path.exists(tracked_path) and is_audio_valid(tracked_path):
+            Path(tracked_path).rename(expected_path)
+            entry["expected"] = safe_name
+            save_track(output_dir, track_data)
+            return True, f"renamed: {Path(tracked_path).name}"
+        else:
+            if os.path.exists(tracked_path):
+                os.remove(tracked_path)
+            remove_entry(output_dir, vid)
+            return False, f"deleted-corrupted: {Path(tracked_path).name}"
+
+    return False, ""
 
 
 def download_video(
@@ -133,48 +203,41 @@ def download_video(
     audio_format: str = "m4a",
     embed_thumbnail: bool = True,
     max_retries: int = 2,
-) -> tuple[str, str]:
+    track_data: dict | None = None,
+    misnamed: dict | None = None,
+) -> tuple[str, str, bool]:
     """Download a single video as an audio file.
 
-    Args:
-        video: VideoInfo to download.
-        output_dir: Directory to save the file.
-        existing_files: Set of existing filenames for duplicate check.
-        audio_format: Output audio format (m4a, flac, opus, mp3).
-        embed_thumbnail: Whether to embed album art.
-        max_retries: Number of retry attempts on failure.
-
-    Returns:
-        Tuple of (status, message) where status is 'ok', 'skip', or 'fail'.
+    Returns (status, message, was_redownloaded).
     """
-    import subprocess
-
-    # Resolve and validate output directory
     output_dir = str(Path(output_dir).expanduser().resolve())
     os.makedirs(output_dir, exist_ok=True)
 
     fmt = SUPPORTED_FORMATS[audio_format]
     ext = fmt["ext"]
 
-    # Determine output filename
     name_source = f"{video.parsed.artist} - {video.parsed.song_title}" if video.parsed else video.title
     safe_name = sanitize_filename(name_source)
 
-    # Check for existing valid copy (handles corruption and broken names)
-    should_skip, fix_msg = _resolve_existing(output_dir, video, safe_name, ext)
-    if should_skip:
-        if fix_msg and fix_msg.startswith("renamed"):
-            return "skip", f"skip ({fix_msg}): {safe_name}"
-        if fix_msg and fix_msg.startswith("deleted"):
-            pass  # Will re-download
-        if fix_msg and fix_msg == "valid":
-            return "skip", f"skip: {safe_name}"
+    redownloading = False
 
-    # Fast path: check raw filename set
-    if safe_name in existing_files:
-        output_path = os.path.join(output_dir, f"{safe_name}.{ext}")
-        if os.path.exists(output_path) and is_audio_valid(output_path):
-            return "skip", f"skip: {safe_name}"
+    # Check existing
+    if track_data is not None and misnamed is not None:
+        found, msg = _check_by_id(output_dir, video, safe_name, ext, track_data, misnamed)
+        if found:
+            if "renamed" in msg:
+                return "skip", f"skip ({msg}): {safe_name}", False
+            return "skip", f"skip: {safe_name}", False
+
+    # Corrupted file with correct name: delete before re-downloading
+    expected_path = os.path.join(output_dir, f"{safe_name}.{ext}")
+    if os.path.exists(expected_path) and not is_audio_valid(expected_path):
+        os.remove(expected_path)
+        redownloading = True
+
+    # Fast path: raw filename set
+    if safe_name in existing_files and os.path.exists(expected_path) and is_audio_valid(expected_path):
+        return "skip", f"skip: {safe_name}", False
 
     cmd = [
         "yt-dlp",
@@ -209,22 +272,25 @@ def download_video(
             last_error = "timeout"
             continue
 
-        output_path = os.path.join(output_dir, f"{safe_name}.{ext}")
-        if result.returncode == 0 and os.path.exists(output_path):
-            # Validate downloaded file
-            if not is_audio_valid(output_path):
+        if result.returncode == 0 and os.path.exists(expected_path):
+            if not is_audio_valid(expected_path):
                 last_error = "corrupted file"
-                os.remove(output_path)
+                os.remove(expected_path)
                 continue
 
-            # Embed metadata
             if video.parsed:
-                _embed_metadata_post(output_path, video.parsed)
-            return "ok", f"ok: {safe_name}.{ext}"
+                _embed_metadata(expected_path, video.parsed, video.video_id)
+
+            if track_data is not None:
+                record_download(output_dir, video.video_id, safe_name, video.title)
+
+            if redownloading:
+                return "ok", f"ok*: {safe_name}.{ext}", True
+            return "ok", f"ok: {safe_name}.{ext}", False
 
         last_error = result.stderr.strip() if result.stderr else "unknown error"
 
-    return "fail", f"fail: {safe_name} ({last_error})"
+    return "fail", f"fail: {safe_name} ({last_error})", False
 
 
 def download_videos(
@@ -234,31 +300,51 @@ def download_videos(
     audio_format: str = "m4a",
     embed_thumbnail: bool = True,
     max_retries: int = 2,
-) -> tuple[int, int, int, list[str]]:
+) -> tuple[int, int, int, int, int, list[str]]:
     """Download multiple videos.
 
     Returns:
-        Tuple of (success_count, skipped_count, fail_count, error_messages).
+        Tuple of (downloaded, renamed, re-downloaded, skipped, failed, errors).
     """
-    success = 0
+    output_dir = str(Path(output_dir).expanduser().resolve())
+    track_data = load_track(output_dir)
+
+    downloaded = 0
+    renamed = 0
+    redownloaded = 0
     skipped = 0
     fail = 0
     errors: list[str] = []
 
     for i, video in enumerate(videos, 1):
-        status, msg = download_video(
+        fmt = SUPPORTED_FORMATS[audio_format]
+        name_source = f"{video.parsed.artist} - {video.parsed.song_title}" if video.parsed else video.title
+        safe_name = sanitize_filename(name_source)
+
+        # Scan for misnamed files once per video (keeps it fresh as files get renamed)
+        misnamed = _scan_for_misnamed(output_dir, safe_name, fmt["ext"])
+
+        status, msg, was_redownloaded = download_video(
             video, output_dir, existing_files,
             audio_format=audio_format,
             embed_thumbnail=embed_thumbnail,
             max_retries=max_retries,
+            track_data=track_data,
+            misnamed=misnamed,
         )
         if status == "ok":
-            success += 1
+            if was_redownloaded:
+                redownloaded += 1
+            elif "renamed" not in msg:
+                downloaded += 1
         elif status == "skip":
-            skipped += 1
+            if "renamed" in msg:
+                renamed += 1
+            else:
+                skipped += 1
         else:
             fail += 1
             errors.append(msg)
         print(f"[{i}/{len(videos)}] {msg}")
 
-    return success, skipped, fail, errors
+    return downloaded, renamed, redownloaded, skipped, fail, errors

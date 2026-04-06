@@ -4,6 +4,7 @@ from .download import download_video, download_videos
 from .files import (
     SUPPORTED_FORMATS,
     get_existing_songs,
+    get_ncsdl_id,
     sanitize_filename,
 )
 from .queue import (
@@ -19,6 +20,12 @@ from .search import (
     get_all_ncs_videos,
     search_ncs_videos,
 )
+from .track import (
+    load_track,
+    record_download,
+    remove_entry,
+    save_track,
+)
 
 __all__ = [
     "VideoInfo",
@@ -27,6 +34,7 @@ __all__ = [
     "download_video",
     "download_videos",
     "get_existing_songs",
+    "get_ncsdl_id",
     "sanitize_filename",
     "search_ncs_videos",
     "get_all_ncs_videos",
@@ -35,4 +43,8 @@ __all__ = [
     "load_queue",
     "clear_queue",
     "filter_downloaded",
+    "load_track",
+    "save_track",
+    "record_download",
+    "remove_entry",
 ]

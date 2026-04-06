@@ -45,7 +45,7 @@ def _download_and_report(
     print(f"output: {output_dir}")
     print("-" * 40)
 
-    success, skipped, fail, errors = download_videos(
+    downloaded, renamed, redownloaded, skipped, fail, errors = download_videos(
         videos,
         output_dir,
         existing,
@@ -55,7 +55,7 @@ def _download_and_report(
     )
 
     print()
-    print(f"done: {success} downloaded, {skipped} skipped, {fail} failed")
+    print(f"done: {downloaded} downloaded, {renamed} renamed, {redownloaded} re-downloaded, {skipped} skipped, {fail} failed")
 
     if errors:
         print()

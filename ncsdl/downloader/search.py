@@ -11,7 +11,8 @@ from ..styles import ParsedTitle, parse_title
 
 NCS_CHANNEL_URL = "https://www.youtube.com/@NoCopyrightSounds/videos"
 
-# Compilation/mix detection patterns
+# Compilation/mix/non-song detection patterns.
+# These match titles that are NOT individual songs.
 _COMPILATION_PATTERNS = frozenset({
     "top 50",
     "top 20",
@@ -23,6 +24,10 @@ _COMPILATION_PATTERNS = frozenset({
     "most viewed",
     "all time",
     "popular songs by",
+    "mashup",
+    "behind the scenes",
+    "10 years",
+    "thank you",
 })
 
 

@@ -1,4 +1,4 @@
-"""File utilities: validation, sanitization, broken name detection."""
+"""File utilities: validation, sanitization, ncsdl_id tag read/write."""
 
 import json
 import os
@@ -61,110 +61,50 @@ def is_audio_valid(filepath: str) -> bool:
         return False
 
 
-def _read_file_tags(filepath: str) -> dict[str, str]:
-    """Read all metadata tags from an audio file."""
-    cmd = [
-        "ffprobe",
-        "-v", "error",
-        "-show_entries",
-        "format_tags",
-        "-of", "json",
-        filepath,
-    ]
-    try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=10,
-            stdin=subprocess.DEVNULL,
-        )
-        data = json.loads(result.stdout)
-        return data.get("format", {}).get("tags", {})
-    except Exception:
-        return {}
+def get_ncsdl_id(filepath: str) -> str | None:
+    """Read the ncsdl_id tag from an audio file. Returns the YouTube video ID or None."""
+    ext = os.path.splitext(filepath)[1].lower()
 
+    if ext == ".m4a":
+        try:
+            from mutagen.mp4 import MP4
+            audio = MP4(filepath)
+            tag = audio.tags
+            if tag and "----:com.apple.iTunes:ncsdl_id" in tag:
+                val = tag["----:com.apple.iTunes:ncsdl_id"]
+                if val:
+                    return val[0].decode("utf-8") if isinstance(val[0], bytes) else str(val[0])
+        except Exception:
+            pass
 
-def file_matches_video(filepath: str, video_id: str, title: str) -> bool:
-    """Check if a file matches the expected video.
+    elif ext == ".mp3":
+        try:
+            from mutagen.mp3 import MP3
+            from mutagen.id3 import TXXX
+            audio = MP3(filepath)
+            if audio.tags:
+                for frame in audio.tags.getall("TXXX"):
+                    if frame.desc == "ncsdl_id":
+                        return frame.text[0] if frame.text else None
+        except Exception:
+            pass
 
-    Matches by:
-    1. Video ID in comment/metadata (if present)
-    2. Title match in metadata (fuzzy — checks if file's title is a substring)
-    """
-    tags = _read_file_tags(filepath)
+    elif ext in (".flac", ".ogg", ".opus"):
+        try:
+            from mutagen.flac import FLAC
+            from mutagen.oggvorbis import OggVorbis
+            audio = FLAC(filepath) if ext == ".flac" else OggVorbis(filepath)
+            tags = audio.get("ncsdl_id", [])
+            if tags:
+                return tags[0]
+        except Exception:
+            pass
 
-    # Check comment field for video ID (from yt-dlp source URL)
-    comment = tags.get("comment", "")
-    if video_id in comment:
-        return True
-
-    # Check if file's metadata title matches the video title
-    file_title = tags.get("title", "")
-    file_artist = tags.get("artist", "")
-    if file_title and file_title.lower() in title.lower():
-        return True
-    if file_artist and file_title:
-        combined = f"{file_artist} - {file_title}".lower()
-        if combined in title.lower():
-            return True
-
-    return False
-
-
-def find_and_fix_broken_name(
-    output_dir: str,
-    video_id: str,
-    video_title: str,
-    expected_name: str,
-    ext: str,
-) -> tuple[bool, str]:
-    """Find a file matching this video, fix its name, or delete if corrupted.
-
-    Returns (found, action) where action describes what was done:
-    - "valid" — file had correct name and is valid
-    - "renamed: oldname.ext" — file was renamed to correct name
-    - "deleted: oldname.ext" — corrupted file deleted
-    - "" — no matching file found
-    """
-    dir_path = Path(output_dir)
-    if not dir_path.is_dir():
-        return False, ""
-
-    target = dir_path / f"{expected_name}.{ext}"
-
-    # Check if correctly named file exists
-    if target.exists():
-        if is_audio_valid(str(target)):
-            return True, "valid"
-        # Corrupted - delete
-        target.unlink()
-        return True, f"deleted: {expected_name}.{ext}"
-
-    # Scan for files matching this video
-    for f in dir_path.iterdir():
-        if not f.is_file() or f.suffix.lower() not in _AUDIO_EXTENSIONS:
-            continue
-
-        if file_matches_video(str(f), video_id, video_title):
-            old_name = f.name
-            if is_audio_valid(str(f)):
-                # Rename to correct name
-                f.rename(target)
-                return True, f"renamed: {old_name}"
-            else:
-                # Corrupted - delete
-                f.unlink()
-                return True, f"deleted: {old_name}"
-
-    return False, ""
+    return None
 
 
 def get_existing_songs(directory: str) -> set[str]:
-    """Get a set of existing song names in a directory.
-
-    Returns filenames without extension for duplicate checking.
-    """
+    """Get a set of existing song names in a directory."""
     dir_path = Path(directory)
     if not dir_path.is_dir():
         return set()
