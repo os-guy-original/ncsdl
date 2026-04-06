@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ncsdl"
+version = "1.0.0"
+description = "NCS YouTube Downloader - Download NoCopyrightSounds music with style detection, duplicate checking, and metadata embedding"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.9"
+dependencies = [
+    "yt-dlp>=2024.1.0",
+    "mutagen>=1.47.0",
+]
+
+[project.scripts]
+ncsdl = "ncsdl.cli:main"
+
+[project.urls]
+"Homepage" = "https://github.com/user/ncsdl"
+"Bug Tracker" = "https://github.com/user/ncsdl/issues"
