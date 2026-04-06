@@ -8,11 +8,22 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from .styles import parse_title
+from .styles import ParsedTitle, parse_title
 
 
 # Unsafe characters for filenames (regex pattern)
 _UNSAFE_CHARS = re.compile(r'[<>:"/\\|?*]')
+
+# Supported audio formats with their yt-dlp codec settings
+SUPPORTED_FORMATS = {
+    "m4a": {"ext": "m4a", "codec": "aac", "quality": "0"},
+    "flac": {"ext": "flac", "codec": "flac", "quality": "0"},
+    "opus": {"ext": "opus", "codec": "opus", "quality": "0"},
+    "mp3": {"ext": "mp3", "codec": "mp3", "quality": "0"},
+}
+
+# Audio file extensions for duplicate detection
+_AUDIO_EXTENSIONS = frozenset({".mp3", ".m4a", ".flac", ".opus", ".ogg", ".wav"})
 
 
 @dataclass
@@ -68,18 +79,15 @@ def _is_compilation(title: str, duration: str) -> bool:
     """Check if a video is a compilation/mix rather than an individual song."""
     title_lower = title.lower()
 
-    # Check for compilation patterns
     for pattern in _COMPILATION_PATTERNS:
         if pattern in title_lower:
             return True
 
     # Compilations are usually longer than 10 minutes
-    # Duration format is like "3:08" or "1:23:45"
     if ":" in duration:
         parts = duration.split(":")
         try:
             if len(parts) == 3:
-                # Has hours - definitely a compilation
                 return True
             elif len(parts) == 2:
                 minutes = int(parts[0])
@@ -143,7 +151,7 @@ def search_ncs_videos(
 
         # Split into: id|title|url|duration
         before_url = line[:url_start]
-        after_url = line[url_start + 1:]  # Remove leading |
+        after_url = line[url_start + 1:]
 
         parts = after_url.split("|", 2)
         if len(parts) < 2:
@@ -192,18 +200,16 @@ def search_ncs_videos(
 
 
 def get_all_ncs_videos(max_results: int = 1000) -> list[VideoInfo]:
-    """Get all NCS videos by searching without genre filter.
-
-    Returns:
-        List of all found VideoInfo objects.
-    """
+    """Get all NCS videos by searching without genre filter."""
     return search_ncs_videos(max_results=max_results)
 
 
 def download_video(
     video: VideoInfo,
     output_dir: str,
-    existing_files: Optional[set[str]] = None,
+    existing_files: set[str],
+    audio_format: str = "m4a",
+    embed_thumbnail: bool = True,
 ) -> tuple[str, str]:
     """Download a single video as an audio file.
 
@@ -211,11 +217,16 @@ def download_video(
         video: VideoInfo to download.
         output_dir: Directory to save the file.
         existing_files: Set of existing filenames for duplicate check.
+        audio_format: Output audio format (m4a, flac, opus, mp3).
+        embed_thumbnail: Whether to embed album art.
 
     Returns:
         Tuple of (status, message) where status is 'ok', 'skip', or 'fail'.
     """
     os.makedirs(output_dir, exist_ok=True)
+
+    fmt = SUPPORTED_FORMATS.get(audio_format, SUPPORTED_FORMATS["m4a"])
+    ext = fmt["ext"]
 
     # Determine output filename
     if video.parsed:
@@ -225,26 +236,30 @@ def download_video(
     else:
         safe_name = _sanitize_filename(video.title)
 
-    output_path = os.path.join(output_dir, f"{safe_name}.mp3")
+    output_path = os.path.join(output_dir, f"{safe_name}.{ext}")
 
     # Duplicate check
-    if existing_files and safe_name in existing_files:
-        return "skip", f"Skip duplicate: {safe_name}"
+    if safe_name in existing_files:
+        return "skip", f"skip: {safe_name}"
 
     cmd = [
         "yt-dlp",
         video.url,
         "-x",
         "--audio-format",
-        "mp3",
+        audio_format,
         "--audio-quality",
-        "0",
+        fmt["quality"],
         "-o",
         os.path.join(output_dir, f"{safe_name}.%(ext)s"),
         "--no-playlist",
         "--quiet",
         "--no-warnings",
+        "--no-embed-metadata",
     ]
+
+    if embed_thumbnail:
+        cmd.append("--embed-thumbnail")
 
     try:
         result = subprocess.run(
@@ -254,20 +269,89 @@ def download_video(
             timeout=300,
         )
     except subprocess.TimeoutExpired:
-        return "fail", f"Timeout: {safe_name}"
+        return "fail", f"timeout: {safe_name}"
 
     if result.returncode == 0 and os.path.exists(output_path):
-        return "ok", f"Downloaded: {safe_name}"
+        # Embed clean metadata via mutagen
+        if video.parsed:
+            _embed_metadata_post(output_path, video.parsed)
+        return "ok", f"ok: {safe_name}.{ext}"
 
-    # Try to get error message
-    error = result.stderr.strip() if result.stderr else "Unknown error"
-    return "fail", f"Failed: {safe_name} ({error})"
+    error = result.stderr.strip() if result.stderr else "unknown error"
+    return "fail", f"fail: {safe_name} ({error})"
+
+
+def _embed_metadata_post(filepath: str, parsed: ParsedTitle) -> None:
+    """Embed clean metadata into a downloaded file using mutagen."""
+    try:
+        ext = Path(filepath).suffix.lower()
+        title = parsed.song_title
+        if parsed.suffix:
+            title = f"{title} {parsed.suffix}"
+
+        artist = parsed.artist
+        if parsed.featuring:
+            artist = f"{artist} feat. {parsed.featuring}"
+
+        genre = parsed.genre or "Electronic"
+        album = "NCS - NoCopyrightSounds"
+
+        if ext == ".mp3":
+            from mutagen.mp3 import MP3
+            from mutagen.id3 import ID3, ID3NoHeaderError
+            try:
+                audio = MP3(filepath, ID3=ID3)
+            except ID3NoHeaderError:
+                audio = MP3(filepath)
+                audio.add_tags()
+            audio["TIT2"] = ID3(encoding=3, text=[title])
+            audio["TPE1"] = ID3(encoding=3, text=[artist])
+            audio["TALB"] = ID3(encoding=3, text=[album])
+            audio["TCON"] = ID3(encoding=3, text=[genre])
+            audio.save()
+        elif ext == ".m4a":
+            from mutagen.mp4 import MP4
+            audio = MP4(filepath)
+            audio.tags = audio.tags or {}
+            audio["\xa9nam"] = title
+            audio["\xa9ART"] = artist
+            audio["\xa9alb"] = album
+            audio["\xa9gen"] = genre
+            audio.save()
+        elif ext == ".flac":
+            from mutagen.flac import FLAC
+            audio = FLAC(filepath)
+            audio["title"] = title
+            audio["artist"] = artist
+            audio["album"] = album
+            audio["genre"] = genre
+            audio.save()
+        elif ext == ".opus":
+            from mutagen.oggvorbis import OggVorbis
+            audio = OggVorbis(filepath)
+            audio["title"] = title
+            audio["artist"] = artist
+            audio["album"] = album
+            audio["genre"] = genre
+            audio.save()
+        elif ext == ".ogg":
+            from mutagen.oggvorbis import OggVorbis
+            audio = OggVorbis(filepath)
+            audio["title"] = title
+            audio["artist"] = artist
+            audio["album"] = album
+            audio["genre"] = genre
+            audio.save()
+    except Exception:
+        pass  # Metadata embedding is non-critical
 
 
 def download_videos(
     videos: list[VideoInfo],
     output_dir: str,
-    existing_files: Optional[set[str]] = None,
+    existing_files: set[str],
+    audio_format: str = "m4a",
+    embed_thumbnail: bool = True,
 ) -> tuple[int, int, int, list[str]]:
     """Download multiple videos.
 
@@ -280,7 +364,11 @@ def download_videos(
     errors = []
 
     for i, video in enumerate(videos, 1):
-        status, msg = download_video(video, output_dir, existing_files)
+        status, msg = download_video(
+            video, output_dir, existing_files,
+            audio_format=audio_format,
+            embed_thumbnail=embed_thumbnail,
+        )
         if status == "ok":
             success += 1
         elif status == "skip":
@@ -312,7 +400,7 @@ def get_existing_songs(directory: str) -> set[str]:
         return existing
 
     for f in dir_path.iterdir():
-        if f.is_file() and f.suffix.lower() in (".mp3", ".m4a", ".flac", ".ogg", ".wav"):
+        if f.is_file() and f.suffix.lower() in _AUDIO_EXTENSIONS:
             existing.add(f.stem)
 
     return existing

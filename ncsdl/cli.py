@@ -7,19 +7,19 @@ from pathlib import Path
 
 from .downloader import (
     check_dependencies,
-    download_video,
     download_videos,
     get_all_ncs_videos,
     get_existing_songs,
     search_ncs_videos,
+    SUPPORTED_FORMATS,
 )
-from .metadata import embed_metadata, embed_metadata_batch
-from .styles import classify_by_genre, format_genre_stats, parse_title
+from .metadata import embed_metadata_batch
+from .styles import classify_by_genre, format_genre_stats
 
 
 def cmd_analyze(args: argparse.Namespace) -> int:
     """Analyze NCS title styles from search results."""
-    print("Searching NCS YouTube channel...")
+    print("searching NCS YouTube channel...")
 
     if args.genre:
         videos = search_ncs_videos(genre=args.genre, max_results=args.limit)
@@ -27,7 +27,7 @@ def cmd_analyze(args: argparse.Namespace) -> int:
         videos = get_all_ncs_videos(max_results=args.limit)
 
     if not videos:
-        print("No videos found.")
+        print("no videos found.")
         return 1
 
     titles = [v.title for v in videos]
@@ -63,31 +63,38 @@ def cmd_analyze(args: argparse.Namespace) -> int:
 def cmd_download(args: argparse.Namespace) -> int:
     """Download NCS songs."""
     output_dir = args.output or os.path.expanduser("~/ncs_downloads")
+    audio_format = args.format or "m4a"
+    embed_thumbnail = not args.no_thumbnail
+
+    if audio_format not in SUPPORTED_FORMATS:
+        print(f"unsupported format: {audio_format}", file=sys.stderr)
+        print(f"supported: {', '.join(SUPPORTED_FORMATS)}", file=sys.stderr)
+        return 1
 
     # Check for existing songs
     existing = set()
     if not args.no_check_dupes:
         existing = get_existing_songs(output_dir)
         if existing:
-            print(f"Found {len(existing)} existing song(s) in {output_dir}")
+            print(f"found {len(existing)} existing song(s) in {output_dir}")
 
     # Search for videos
     if args.genre:
         if args.genre.lower() == "all":
-            print("Searching for all NCS videos...")
+            print("searching for all NCS videos...")
             videos = get_all_ncs_videos(max_results=args.limit)
         else:
-            print(f"Searching NCS {args.genre} tracks...")
+            print(f"searching NCS {args.genre} tracks...")
             videos = search_ncs_videos(genre=args.genre, max_results=args.limit)
     else:
-        print("Searching NCS YouTube channel...")
+        print("searching NCS YouTube channel...")
         videos = search_ncs_videos(max_results=args.limit)
 
     if not videos:
-        print("No videos found.")
+        print("no videos found.")
         return 1
 
-    print(f"Found {len(videos)} video(s)")
+    print(f"found {len(videos)} video(s)")
 
     if args.list_only:
         print()
@@ -98,30 +105,24 @@ def cmd_download(args: argparse.Namespace) -> int:
 
     # Download
     print()
-    print(f"Downloading to: {output_dir}")
+    print(f"format: {audio_format}  |  thumbnails: {'yes' if embed_thumbnail else 'no'}")
+    print(f"output: {output_dir}")
     print("-" * 40)
 
-    success, skipped, fail, errors = download_videos(videos, output_dir, existing)
+    success, skipped, fail, errors = download_videos(
+        videos,
+        output_dir,
+        existing,
+        audio_format=audio_format,
+        embed_thumbnail=embed_thumbnail,
+    )
 
     print()
-    print(f"Download complete: {success} downloaded, {skipped} skipped, {fail} failed")
-
-    # Embed metadata if requested
-    if args.embed_metadata and success > 0:
-        print()
-        print("Embedding metadata...")
-        downloaded_dir = Path(output_dir)
-        audio_files = [
-            str(f)
-            for f in downloaded_dir.iterdir()
-            if f.suffix.lower() in (".mp3", ".m4a", ".flac", ".ogg", ".wav")
-        ]
-        meta_success, meta_fail, meta_errors = embed_metadata_batch(audio_files)
-        print(f"Metadata: {meta_success} succeeded, {meta_fail} failed")
+    print(f"done: {success} downloaded, {skipped} skipped, {fail} failed")
 
     if errors:
         print()
-        print("Errors:")
+        print("errors:")
         for err in errors[:10]:
             print(f"  - {err}")
         if len(errors) > 10:
@@ -133,16 +134,16 @@ def cmd_download(args: argparse.Namespace) -> int:
 def cmd_metadata(args: argparse.Namespace) -> int:
     """Embed metadata into existing audio files."""
     if not args.files:
-        print("No files specified.")
+        print("no files specified.")
         return 1
 
     success, fail, errors = embed_metadata_batch(args.files)
 
-    print(f"Metadata embedding complete: {success} succeeded, {fail} failed")
+    print(f"metadata complete: {success} succeeded, {fail} failed")
 
     if errors:
         print()
-        print("Errors:")
+        print("errors:")
         for err in errors:
             print(f"  - {err}")
 
@@ -153,18 +154,17 @@ def cmd_check_dupes(args: argparse.Namespace) -> int:
     """Check for duplicate songs in a directory."""
     directory = args.directory
     if not os.path.isdir(directory):
-        print(f"Directory not found: {directory}")
+        print(f"directory not found: {directory}")
         return 1
 
     existing = get_existing_songs(directory)
 
     if not existing:
-        print(f"No audio files found in {directory}")
+        print(f"no audio files found in {directory}")
         return 0
 
-    # Look for potential duplicates (similar names)
     songs = sorted(existing)
-    print(f"Found {len(songs)} unique song(s) in {directory}")
+    print(f"found {len(songs)} unique song(s) in {directory}")
 
     if args.verbose:
         print()
@@ -219,6 +219,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="Max videos to download (default: 100)",
     )
     dl_parser.add_argument(
+        "--format", "-f",
+        choices=list(SUPPORTED_FORMATS.keys()),
+        default="m4a",
+        help="Audio format (default: m4a)",
+    )
+    dl_parser.add_argument(
+        "--no-thumbnail",
+        action="store_true",
+        help="Do not embed album thumbnail",
+    )
+    dl_parser.add_argument(
         "--list-only",
         action="store_true",
         help="Only list found videos without downloading",
@@ -227,11 +238,6 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-check-dupes",
         action="store_true",
         help="Skip duplicate checking",
-    )
-    dl_parser.add_argument(
-        "--embed-metadata",
-        action="store_true",
-        help="Embed metadata after download",
     )
 
     # metadata command
@@ -266,15 +272,14 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     """Main entry point."""
-    # Check dependencies
     missing = check_dependencies()
     if missing:
-        print("Missing required dependencies:", ", ".join(missing), file=sys.stderr)
-        print("Install them with:", file=sys.stderr)
+        print("missing dependencies:", ", ".join(missing), file=sys.stderr)
+        print("install:", file=sys.stderr)
         if "yt-dlp" in missing:
             print("  pip install yt-dlp", file=sys.stderr)
         if "ffprobe" in missing:
-            print("  sudo apt install ffmpeg  (or equivalent for your OS)", file=sys.stderr)
+            print("  sudo apt install ffmpeg  (or equivalent)", file=sys.stderr)
         return 1
 
     parser = build_parser()
@@ -284,14 +289,18 @@ def main() -> int:
         parser.print_help()
         return 0
 
-    if args.command == "analyze":
-        return cmd_analyze(args)
-    elif args.command in ("download", "dl"):
-        return cmd_download(args)
-    elif args.command in ("metadata", "meta"):
-        return cmd_metadata(args)
-    elif args.command == "check-dupes":
-        return cmd_check_dupes(args)
+    commands = {
+        "analyze": cmd_analyze,
+        "download": cmd_download,
+        "dl": cmd_download,
+        "metadata": cmd_metadata,
+        "meta": cmd_metadata,
+        "check-dupes": cmd_check_dupes,
+    }
+
+    handler = commands.get(args.command)
+    if handler:
+        return handler(args)
 
     parser.print_help()
     return 0

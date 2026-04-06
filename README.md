@@ -1,6 +1,6 @@
 # ncsdl - NCS YouTube Downloader
 
-Download NoCopyrightSounds music from YouTube with automatic title style detection, genre classification, duplicate checking, and metadata embedding.
+Download NoCopyrightSounds music from YouTube with automatic title style detection, genre classification, duplicate checking, thumbnail embedding, and metadata tags.
 
 ## Features
 
@@ -9,8 +9,11 @@ Download NoCopyrightSounds music from YouTube with automatic title style detecti
   - Old (Pre-Oct 2023): `Artist - Song [NCS Release]`
   - Legacy: `Artist - Song`
 - **Genre Classification**: Supports 60+ NCS genres including Trap, House, Dubstep, Drum & Bass, Future Bass, and more
+- **Modern Audio Formats**: M4A (default), FLAC, Opus, or MP3
+- **Thumbnail Embedding**: Album art from YouTube is embedded as cover art
+- **Metadata Tags**: Artist, title, genre, album, and comment tags embedded during download
 - **Duplicate Checking**: Automatically skips already downloaded songs
-- **Metadata Embedding**: Embeds artist, title, genre, and album tags into downloaded files
+- **Post-hoc Metadata**: Tag existing audio files without re-encoding via mutagen
 - **Clean CLI**: Unix-style command-line interface with clear tabular output
 
 ## Installation
@@ -18,7 +21,7 @@ Download NoCopyrightSounds music from YouTube with automatic title style detecti
 ### Prerequisites
 
 - Python 3.9+
-- ffmpeg (for audio conversion and metadata embedding)
+- ffmpeg (for audio conversion)
 
 ### Install
 
@@ -59,29 +62,38 @@ python -m ncsdl analyze --limit 500
 Download by genre, or the entire library:
 
 ```bash
-# Download Trap songs
+# Download Trap songs (M4A with thumbnails, default)
 python -m ncsdl download --genre Trap
 
-# Download all NCS songs
-python -m ncsdl download --genre all
+# Download entire library in FLAC
+python -m ncsdl download --genre all --format flac
 
-# Download to specific directory
-python -m ncsdl download --genre House --output ~/music/ncs
+# Download to specific directory in Opus
+python -m ncsdl download --genre House --output ~/music/ncs --format opus
+
+# Download as MP3 without thumbnails
+python -m ncsdl download --genre Dubstep --format mp3 --no-thumbnail
 
 # List found videos without downloading
 python -m ncsdl download --genre Trap --list-only
-
-# Download with metadata embedding
-python -m ncsdl download --genre Dubstep --embed-metadata
 ```
+
+### Supported Audio Formats
+
+| Format | Extension | Codec | Quality | Use Case |
+|---|---|---|---|---|
+| m4a (default) | .m4a | AAC | Lossy | Best balance of quality and size |
+| flac | .flac | FLAC | Lossless | Archival, audiophile |
+| opus | .opus | Opus | Lossy | Best compression, modern players |
+| mp3 | .mp3 | MP3 | Lossy | Maximum compatibility |
 
 ### Embed Metadata
 
-Add ID3 tags to existing audio files:
+Add tags to existing audio files (without re-encoding):
 
 ```bash
-python -m ncsdl metadata song1.mp3 song2.mp3
-python -m ncsdl metadata ~/music/ncs/*.mp3
+python -m ncsdl metadata song1.m4a song2.flac
+python -m ncsdl metadata ~/music/ncs/*.m4a
 ```
 
 ### Check for Duplicates
@@ -108,7 +120,7 @@ The tool recognizes three main title formats:
 
 | Style | Example | Era |
 |---|---|---|
-| modern | `Lost Sky - Lost pt. II | Trap | NCS - Copyright Free Music` | Oct 2023+ |
+| modern | `Lost Sky - Lost pt. II \| Trap \| NCS - Copyright Free Music` | Oct 2023+ |
 | old | `Elektronomia - Sky high [NCS Release]` | Pre-Oct 2023 |
 | bare | `Cartoon - On & On` | Early uploads |
 

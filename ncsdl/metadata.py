@@ -1,13 +1,19 @@
 """Metadata embedding for downloaded NCS songs.
 
-Embeds song information (artist, title, genre, etc.) as ID3/MP3 tags.
+Uses mutagen for tag editing without re-encoding.
+Supports MP3, M4A, FLAC, and OGG formats.
 """
 
 import os
-import subprocess
-import tempfile
 from pathlib import Path
 from typing import Optional
+
+from mutagen import File as MutagenFile
+from mutagen.mp3 import MP3
+from mutagen.mp4 import MP4
+from mutagen.flac import FLAC
+from mutagen.oggvorbis import OggVorbis
+from mutagen.id3 import ID3, ID3NoHeaderError
 
 from .styles import ParsedTitle
 
@@ -16,9 +22,7 @@ def embed_metadata(
     filepath: str,
     parsed: Optional[ParsedTitle] = None,
 ) -> tuple[bool, str]:
-    """Embed metadata into an audio file.
-
-    Uses ffmpeg for broad format support.
+    """Embed metadata into an audio file without re-encoding.
 
     Args:
         filepath: Path to the audio file.
@@ -28,76 +32,119 @@ def embed_metadata(
         Tuple of (success, message).
     """
     if not os.path.exists(filepath):
-        return False, f"File not found: {filepath}"
+        return False, f"file not found: {filepath}"
 
     if parsed is None:
-        return False, "Could not parse title for metadata"
+        return False, "no metadata to embed"
 
-    # Build metadata tags
-    tags = {
-        "title": parsed.song_title,
-        "artist": parsed.artist,
-        "genre": parsed.genre or "Electronic",
-        "album": "NCS - NoCopyrightSounds",
-        "comment": f"Downloaded via ncsdl | Style: {parsed.style}",
-    }
+    ext = Path(filepath).suffix.lower()
 
-    if parsed.featuring:
-        tags["artist"] = f"{parsed.artist} feat. {parsed.featuring}"
-
+    # Build tag values
+    title = parsed.song_title
     if parsed.suffix:
-        tags["title"] = f"{parsed.song_title} {parsed.suffix}"
+        title = f"{title} {parsed.suffix}"
 
-    # Use ffmpeg to embed metadata
-    # Use temp file in same directory to preserve filesystem for atomic replace
-    dir_path = os.path.dirname(os.path.abspath(filepath))
-    fd, temp_path = tempfile.mkstemp(suffix=".mp3", dir=dir_path)
-    os.close(fd)
+    artist = parsed.artist
+    if parsed.featuring:
+        artist = f"{artist} feat. {parsed.featuring}"
 
-    cmd = [
-        "ffmpeg",
-        "-i",
-        filepath,
-        "-map",
-        "0:a",
-        "-c:a",
-        "copy",
-        "-metadata",
-        f"title={tags['title']}",
-        "-metadata",
-        f"artist={tags['artist']}",
-        "-metadata",
-        f"genre={tags['genre']}",
-        "-metadata",
-        f"album={tags['album']}",
-        "-metadata",
-        f"comment={tags['comment']}",
-        "-y",
-        temp_path,
-    ]
+    genre = parsed.genre or "Electronic"
+    album = "NCS - NoCopyrightSounds"
+    comment = f"Downloaded via ncsdl | style: {parsed.style}"
 
     try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
-    except subprocess.TimeoutExpired:
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
-        return False, f"Metadata embed timed out: {filepath}"
+        if ext == ".mp3":
+            _tag_mp3(filepath, title, artist, genre, album, comment)
+        elif ext == ".m4a":
+            _tag_m4a(filepath, title, artist, genre, album, comment)
+        elif ext == ".flac":
+            _tag_flac(filepath, title, artist, genre, album, comment)
+        elif ext == ".ogg":
+            _tag_ogg(filepath, title, artist, genre, album, comment)
+        else:
+            return False, f"unsupported format: {ext}"
+    except Exception as exc:
+        return False, f"tag error: {exc}"
 
-    if result.returncode == 0 and os.path.exists(temp_path):
-        os.replace(temp_path, filepath)
-        return True, f"Metadata embedded: {tags['title']} - {tags['artist']}"
+    return True, f"ok: {title} - {artist}"
 
-    # Cleanup temp file if it exists
-    if os.path.exists(temp_path):
-        os.remove(temp_path)
 
-    error = result.stderr.strip() if result.stderr else "Unknown error"
-    return False, f"Metadata failed: {filepath} ({error})"
+def _tag_mp3(
+    path: str,
+    title: str,
+    artist: str,
+    genre: str,
+    album: str,
+    comment: str,
+) -> None:
+    """Set ID3 tags on an MP3 file."""
+    try:
+        audio = MP3(path, ID3=ID3)
+    except ID3NoHeaderError:
+        audio = MP3(path)
+        audio.add_tags()
+
+    audio["TIT2"] = ID3(encoding=3, text=[title])
+    audio["TPE1"] = ID3(encoding=3, text=[artist])
+    audio["TALB"] = ID3(encoding=3, text=[album])
+    audio["TCON"] = ID3(encoding=3, text=[genre])
+    audio["COMM"] = ID3(encoding=3, lang="eng", desc="ncsdl", text=[comment])
+    audio.save()
+
+
+def _tag_m4a(
+    path: str,
+    title: str,
+    artist: str,
+    genre: str,
+    album: str,
+    comment: str,
+) -> None:
+    """Set tags on an M4A file."""
+    audio = MP4(path)
+    audio.tags = audio.tags or {}
+    audio["\xa9nam"] = title      # title
+    audio["\xa9ART"] = artist     # artist
+    audio["\xa9alb"] = album      # album
+    audio["\xa9gen"] = genre      # genre
+    audio["\xa9cmt"] = comment    # comment
+    audio.save()
+
+
+def _tag_flac(
+    path: str,
+    title: str,
+    artist: str,
+    genre: str,
+    album: str,
+    comment: str,
+) -> None:
+    """Set tags on a FLAC file."""
+    audio = FLAC(path)
+    audio["title"] = title
+    audio["artist"] = artist
+    audio["album"] = album
+    audio["genre"] = genre
+    audio["comment"] = comment
+    audio.save()
+
+
+def _tag_ogg(
+    path: str,
+    title: str,
+    artist: str,
+    genre: str,
+    album: str,
+    comment: str,
+) -> None:
+    """Set tags on an OGG file."""
+    audio = OggVorbis(path)
+    audio["title"] = title
+    audio["artist"] = artist
+    audio["album"] = album
+    audio["genre"] = genre
+    audio["comment"] = comment
+    audio.save()
 
 
 def _parse_from_filename(filename: str) -> Optional[ParsedTitle]:
@@ -118,20 +165,15 @@ def _parse_from_filename(filename: str) -> Optional[ParsedTitle]:
     return ParsedTitle(
         artist=artist,
         song_title=song,
-        genre="Electronic",  # Default fallback
+        genre="Electronic",
         style="filename",
     )
 
 
 def embed_metadata_batch(
     filepaths: list[str],
-    parse_from_filename: bool = True,
 ) -> tuple[int, int, list[str]]:
     """Embed metadata into multiple files.
-
-    Args:
-        filepaths: List of audio file paths.
-        parse_from_filename: If True, try to parse artist/title from filename.
 
     Returns:
         Tuple of (success_count, fail_count, error_messages).
@@ -144,16 +186,13 @@ def embed_metadata_batch(
         path = Path(filepath)
         if not path.exists():
             fail += 1
-            errors.append(f"File not found: {filepath}")
+            errors.append(f"file not found: {filepath}")
             continue
 
-        # Try to parse from filename
-        filename = path.stem
-        parsed = _parse_from_filename(filename)
-
+        parsed = _parse_from_filename(path.stem)
         if parsed is None:
             fail += 1
-            errors.append(f"Could not parse filename: {filename}")
+            errors.append(f"could not parse: {path.stem}")
             continue
 
         ok, msg = embed_metadata(filepath, parsed=parsed)
