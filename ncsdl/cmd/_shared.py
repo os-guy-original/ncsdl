@@ -11,16 +11,16 @@ from ..downloader import (
 )
 
 
-def _resolve_search(genre: str | None, limit: int) -> tuple[list, str]:
+def _resolve_search(genre: str | None, limit: int, include_mixes: bool = False) -> tuple[list, str]:
     """Resolve which search function to use and return (videos, label)."""
     if not genre:
-        return search_ncs_videos(max_results=limit), "NCS YouTube channel"
+        return search_ncs_videos(max_results=limit, include_mixes=include_mixes), "NCS YouTube channel"
 
     g = genre.lower()
     if g == "all":
-        return get_all_ncs_videos(max_results=limit), "all NCS videos"
+        return get_all_ncs_videos(max_results=limit, include_mixes=include_mixes), "all NCS videos"
 
-    return search_ncs_videos(genre=genre, max_results=limit), f"NCS {genre} tracks"
+    return search_ncs_videos(genre=genre, max_results=limit, include_mixes=include_mixes), f"NCS {genre} tracks"
 
 
 def _print_table(videos: list, *, index: bool = False) -> None:

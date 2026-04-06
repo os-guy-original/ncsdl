@@ -31,11 +31,13 @@ def build_parser() -> argparse.ArgumentParser:
     p = subparsers.add_parser("analyze", help="Analyze NCS title styles and genre distribution")
     p.add_argument("--genre", "-g", help="Filter by genre (e.g. Trap, House, Dubstep)")
     _add_common_limit(p)
+    p.add_argument("--include-mixes", "-m", action="store_true", help="Include mixes and compilations")
 
     # search
     p = subparsers.add_parser("search", help="Search for specific NCS songs")
     p.add_argument("pattern", help="Search pattern (artist, title, or genre)")
     _add_common_limit(p)
+    p.add_argument("--include-mixes", "-m", action="store_true", help="Include mixes and compilations")
 
     # count
     subparsers.add_parser("count", help="Count total NCS videos on YouTube")
@@ -63,6 +65,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--list-only", action="store_true", help="Only list found videos without downloading")
     p.add_argument("--no-check-dupes", action="store_true", help="Skip duplicate checking")
     p.add_argument("--retries", "-r", type=int, default=2, help="Retry attempts per failed download (default: 2)")
+    p.add_argument("--include-mixes", "-m", action="store_true", help="Include mixes and compilations")
 
     # resume
     p = subparsers.add_parser("resume", help="Resume an interrupted download")
@@ -70,6 +73,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--format", "-f", choices=list(SUPPORTED_FORMATS.keys()), default="m4a", help="Audio format (default: m4a)")
     p.add_argument("--no-thumbnail", action="store_true", help="Do not embed album thumbnail")
     p.add_argument("--retries", "-r", type=int, default=2, help="Retry attempts per failed download (default: 2)")
+    p.add_argument("--include-mixes", "-m", action="store_true", help="Include mixes and compilations")
 
     # metadata
     p = subparsers.add_parser("metadata", aliases=["meta"], help="Embed metadata into audio files")

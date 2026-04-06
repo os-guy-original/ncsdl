@@ -102,6 +102,7 @@ def _parse_video_lines(
     lines: list[str],
     genre: Optional[str],
     max_results: int,
+    include_mixes: bool = False,
 ) -> list[VideoInfo]:
     """Parse yt-dlp output lines into VideoInfo objects."""
     videos: list[VideoInfo] = []
@@ -112,7 +113,7 @@ def _parse_video_lines(
 
         video_id, title, url, duration = parsed_line
 
-        if _is_compilation(title, duration):
+        if not include_mixes and _is_compilation(title, duration):
             continue
 
         parsed = parse_title(title)
@@ -154,6 +155,7 @@ def _run_ytdlp(cmd: list[str], timeout: int) -> str:
 def search_ncs_videos(
     genre: Optional[str] = None,
     max_results: int = 0,
+    include_mixes: bool = False,
 ) -> list[VideoInfo]:
     """Search NCS YouTube channel for videos.
 
@@ -196,12 +198,12 @@ def search_ncs_videos(
     if not output:
         return []
 
-    return _parse_video_lines(output.splitlines(), genre, max_results)
+    return _parse_video_lines(output.splitlines(), genre, max_results, include_mixes)
 
 
-def get_all_ncs_videos(max_results: int = 1000) -> list[VideoInfo]:
+def get_all_ncs_videos(max_results: int = 1000, include_mixes: bool = False) -> list[VideoInfo]:
     """Get all NCS videos by searching without genre filter."""
-    return search_ncs_videos(max_results=max_results)
+    return search_ncs_videos(max_results=max_results, include_mixes=include_mixes)
 
 
 def count_ncs_videos() -> int:

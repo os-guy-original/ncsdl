@@ -19,10 +19,10 @@ def run(args) -> int:
             break
 
     if genre_match:
-        videos = search_ncs_videos(genre=genre_match, max_results=limit)
+        videos = search_ncs_videos(genre=genre_match, max_results=limit, include_mixes=args.include_mixes)
     else:
         search_count = limit * 3 if limit > 0 else 5000
-        videos = get_all_ncs_videos(max_results=search_count)
+        videos = get_all_ncs_videos(max_results=search_count, include_mixes=args.include_mixes)
         videos = [
             v for v in videos
             if pattern in v.title.lower()

@@ -8,9 +8,9 @@ def run(args) -> int:
     print("searching NCS YouTube channel...")
 
     videos = (
-        search_ncs_videos(genre=args.genre, max_results=args.limit)
+        search_ncs_videos(genre=args.genre, max_results=args.limit, include_mixes=args.include_mixes)
         if args.genre
-        else get_all_ncs_videos(max_results=args.limit)
+        else get_all_ncs_videos(max_results=args.limit, include_mixes=args.include_mixes)
     )
 
     if not videos:

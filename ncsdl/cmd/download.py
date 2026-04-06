@@ -25,8 +25,8 @@ def run(args) -> int:
         if existing:
             print(f"found {len(existing)} existing song(s) in {output_dir}")
 
-    print(f"searching {_resolve_search(args.genre, args.limit)[1]}...")
-    videos, _ = _resolve_search(args.genre, args.limit)
+    print(f"searching {_resolve_search(args.genre, args.limit, args.include_mixes)[1]}...")
+    videos, _ = _resolve_search(args.genre, args.limit, args.include_mixes)
 
     if not videos:
         print("no videos found.")
