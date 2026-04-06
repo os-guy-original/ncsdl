@@ -8,8 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from .styles import ParsedTitle, parse_title
-
+from .styles import ParsedTitle, parse_title, build_tag_values
 
 # Unsafe characters for filenames (regex pattern)
 _UNSAFE_CHARS = re.compile(r'[<>:"/\\|?*]')
@@ -24,6 +23,10 @@ SUPPORTED_FORMATS = {
 
 # Audio file extensions for duplicate detection
 _AUDIO_EXTENSIONS = frozenset({".mp3", ".m4a", ".flac", ".opus", ".ogg", ".wav"})
+
+# Metadata tag handlers keyed by file extension
+# Each handler receives (path, title, artist, album, genre) and writes tags.
+# Imports are deferred to avoid loading all mutagen modules upfront.
 
 
 @dataclass
@@ -54,7 +57,7 @@ def check_dependencies() -> list[str]:
 
 
 # Title patterns that indicate compilation/mix videos, not individual songs
-_COMPILATION_PATTERNS = [
+_COMPILATION_PATTERNS = frozenset({
     "top 50",
     "top 20",
     "top 100",
@@ -72,7 +75,17 @@ _COMPILATION_PATTERNS = [
     "all time",
     "year (",
     "popular songs by",
-]
+})
+
+
+def _validate_output_dir(directory: str) -> str:
+    """Resolve and validate output directory path.
+
+    Expands user home directory and resolves any '..' sequences
+    to produce a canonical absolute path.
+    """
+    resolved = Path(directory).expanduser().resolve()
+    return str(resolved)
 
 
 def _is_compilation(title: str, duration: str) -> bool:
@@ -89,14 +102,38 @@ def _is_compilation(title: str, duration: str) -> bool:
         try:
             if len(parts) == 3:
                 return True
-            elif len(parts) == 2:
-                minutes = int(parts[0])
-                if minutes > 10:
-                    return True
+            if len(parts) == 2 and int(parts[0]) > 10:
+                return True
         except ValueError:
             pass
 
     return False
+
+
+def _parse_ytdlp_line(line: str) -> Optional[tuple[str, str, str, str]]:
+    """Parse a single yt-dlp output line into (id, title, url, duration).
+
+    Returns None if the line cannot be parsed.
+    """
+    url_start = line.find("|https://")
+    if url_start == -1:
+        return None
+
+    before_url = line[:url_start]
+    after_url = line[url_start + 1:]
+
+    first_pipe = before_url.find("|")
+    if first_pipe == -1:
+        return None
+
+    video_id = before_url[:first_pipe].strip()
+    title = before_url[first_pipe + 1:].strip()
+
+    parts = after_url.split("|", 1)
+    url = parts[0].strip()
+    duration = parts[1].strip() if len(parts) > 1 else "0:00"
+
+    return video_id, title, url, duration
 
 
 def search_ncs_videos(
@@ -136,65 +173,36 @@ def search_ncs_videos(
             timeout=120,
         )
     except subprocess.TimeoutExpired:
-        print("Search timed out. Try reducing max_results.", file=sys.stderr)
+        print("search timed out. try reducing max_results.", file=sys.stderr)
         return []
 
-    videos = []
-    for line in result.stdout.strip().split("\n"):
-        if not line:
+    videos: list[VideoInfo] = []
+    for line in result.stdout.splitlines():
+        parsed_line = _parse_ytdlp_line(line)
+        if parsed_line is None:
             continue
 
-        # The URL always starts with "https://" - use this to split
-        url_start = line.find("|https://")
-        if url_start == -1:
-            continue
+        video_id, title, url, duration = parsed_line
 
-        # Split into: id|title|url|duration
-        before_url = line[:url_start]
-        after_url = line[url_start + 1:]
-
-        parts = after_url.split("|", 2)
-        if len(parts) < 2:
-            continue
-
-        url = parts[0]
-        duration = parts[1] if len(parts) > 1 else "0:00"
-
-        # The before_url part is: id|title
-        first_pipe = before_url.find("|")
-        if first_pipe == -1:
-            continue
-
-        video_id = before_url[:first_pipe]
-        title = before_url[first_pipe + 1:]
-
-        title = title.strip()
-        duration = duration.strip()
-
-        # Skip compilations
         if _is_compilation(title, duration):
             continue
 
         parsed = parse_title(title)
 
-        # Filter by genre if specified
         if genre and parsed:
             if not parsed.genre or parsed.genre.lower() != genre.lower():
                 continue
 
-        # Stop if we have enough results
         if len(videos) >= max_results:
             break
 
-        videos.append(
-            VideoInfo(
-                video_id=video_id.strip(),
-                title=title,
-                url=url.strip(),
-                duration=duration,
-                parsed=parsed,
-            )
-        )
+        videos.append(VideoInfo(
+            video_id=video_id,
+            title=title,
+            url=url,
+            duration=duration,
+            parsed=parsed,
+        ))
 
     return videos
 
@@ -202,6 +210,88 @@ def search_ncs_videos(
 def get_all_ncs_videos(max_results: int = 1000) -> list[VideoInfo]:
     """Get all NCS videos by searching without genre filter."""
     return search_ncs_videos(max_results=max_results)
+
+
+# --- Metadata embedding helpers (dispatcher pattern) ---
+
+
+def _tag_mp3(path: str, tags: dict[str, str]) -> None:
+    """Set ID3 tags on an MP3 file."""
+    from mutagen.mp3 import MP3
+    from mutagen.id3 import ID3, ID3NoHeaderError
+
+    try:
+        audio = MP3(path, ID3=ID3)
+    except ID3NoHeaderError:
+        audio = MP3(path)
+        audio.add_tags()
+
+    audio["TIT2"] = ID3(encoding=3, text=[tags["title"]])
+    audio["TPE1"] = ID3(encoding=3, text=[tags["artist"]])
+    audio["TALB"] = ID3(encoding=3, text=[tags["album"]])
+    audio["TCON"] = ID3(encoding=3, text=[tags["genre"]])
+    audio.save()
+
+
+def _tag_m4a(path: str, tags: dict[str, str]) -> None:
+    """Set tags on an M4A file."""
+    from mutagen.mp4 import MP4
+
+    audio = MP4(path)
+    audio.tags = audio.tags or {}
+    audio["\xa9nam"] = tags["title"]
+    audio["\xa9ART"] = tags["artist"]
+    audio["\xa9alb"] = tags["album"]
+    audio["\xa9gen"] = tags["genre"]
+    audio.save()
+
+
+def _tag_vorbis(path: str, tags: dict[str, str]) -> None:
+    """Set tags on a FLAC or OGG file (both use Vorbis comments)."""
+    from mutagen.flac import FLAC
+    from mutagen.oggvorbis import OggVorbis
+
+    ext = Path(path).suffix.lower()
+    audio = FLAC(path) if ext == ".flac" else OggVorbis(path)
+    audio["title"] = tags["title"]
+    audio["artist"] = tags["artist"]
+    audio["album"] = tags["album"]
+    audio["genre"] = tags["genre"]
+    audio.save()
+
+
+# Dispatcher: extension -> (tag_func, error_message)
+_TAG_HANDLERS: dict[str, tuple[callable, str]] = {
+    ".mp3": (_tag_mp3, "mp3 tag error"),
+    ".m4a": (_tag_m4a, "m4a tag error"),
+    ".flac": (_tag_vorbis, "flac tag error"),
+    ".opus": (_tag_vorbis, "opus tag error"),
+    ".ogg": (_tag_vorbis, "ogg tag error"),
+}
+
+
+def _embed_metadata_post(filepath: str, parsed: ParsedTitle) -> bool:
+    """Embed clean metadata into a downloaded file using mutagen.
+
+    Returns True on success, False on failure.
+    """
+    ext = Path(filepath).suffix.lower()
+    handler_info = _TAG_HANDLERS.get(ext)
+    if handler_info is None:
+        return False
+
+    tag_func, _ = handler_info
+    tags = build_tag_values(parsed)
+
+    try:
+        tag_func(filepath, tags)
+        return True
+    except Exception as exc:
+        print(f"metadata embed warning: {exc}", file=sys.stderr)
+        return False
+
+
+# --- Download functions ---
 
 
 def download_video(
@@ -223,18 +313,15 @@ def download_video(
     Returns:
         Tuple of (status, message) where status is 'ok', 'skip', or 'fail'.
     """
+    output_dir = _validate_output_dir(output_dir)
     os.makedirs(output_dir, exist_ok=True)
 
-    fmt = SUPPORTED_FORMATS.get(audio_format, SUPPORTED_FORMATS["m4a"])
+    fmt = SUPPORTED_FORMATS[audio_format]
     ext = fmt["ext"]
 
     # Determine output filename
-    if video.parsed:
-        safe_name = _sanitize_filename(
-            f"{video.parsed.artist} - {video.parsed.song_title}"
-        )
-    else:
-        safe_name = _sanitize_filename(video.title)
+    name_source = f"{video.parsed.artist} - {video.parsed.song_title}" if video.parsed else video.title
+    safe_name = _sanitize_filename(name_source)
 
     output_path = os.path.join(output_dir, f"{safe_name}.{ext}")
 
@@ -272,78 +359,12 @@ def download_video(
         return "fail", f"timeout: {safe_name}"
 
     if result.returncode == 0 and os.path.exists(output_path):
-        # Embed clean metadata via mutagen
         if video.parsed:
             _embed_metadata_post(output_path, video.parsed)
         return "ok", f"ok: {safe_name}.{ext}"
 
     error = result.stderr.strip() if result.stderr else "unknown error"
     return "fail", f"fail: {safe_name} ({error})"
-
-
-def _embed_metadata_post(filepath: str, parsed: ParsedTitle) -> None:
-    """Embed clean metadata into a downloaded file using mutagen."""
-    try:
-        ext = Path(filepath).suffix.lower()
-        title = parsed.song_title
-        if parsed.suffix:
-            title = f"{title} {parsed.suffix}"
-
-        artist = parsed.artist
-        if parsed.featuring:
-            artist = f"{artist} feat. {parsed.featuring}"
-
-        genre = parsed.genre or "Electronic"
-        album = "NCS - NoCopyrightSounds"
-
-        if ext == ".mp3":
-            from mutagen.mp3 import MP3
-            from mutagen.id3 import ID3, ID3NoHeaderError
-            try:
-                audio = MP3(filepath, ID3=ID3)
-            except ID3NoHeaderError:
-                audio = MP3(filepath)
-                audio.add_tags()
-            audio["TIT2"] = ID3(encoding=3, text=[title])
-            audio["TPE1"] = ID3(encoding=3, text=[artist])
-            audio["TALB"] = ID3(encoding=3, text=[album])
-            audio["TCON"] = ID3(encoding=3, text=[genre])
-            audio.save()
-        elif ext == ".m4a":
-            from mutagen.mp4 import MP4
-            audio = MP4(filepath)
-            audio.tags = audio.tags or {}
-            audio["\xa9nam"] = title
-            audio["\xa9ART"] = artist
-            audio["\xa9alb"] = album
-            audio["\xa9gen"] = genre
-            audio.save()
-        elif ext == ".flac":
-            from mutagen.flac import FLAC
-            audio = FLAC(filepath)
-            audio["title"] = title
-            audio["artist"] = artist
-            audio["album"] = album
-            audio["genre"] = genre
-            audio.save()
-        elif ext == ".opus":
-            from mutagen.oggvorbis import OggVorbis
-            audio = OggVorbis(filepath)
-            audio["title"] = title
-            audio["artist"] = artist
-            audio["album"] = album
-            audio["genre"] = genre
-            audio.save()
-        elif ext == ".ogg":
-            from mutagen.oggvorbis import OggVorbis
-            audio = OggVorbis(filepath)
-            audio["title"] = title
-            audio["artist"] = artist
-            audio["album"] = album
-            audio["genre"] = genre
-            audio.save()
-    except Exception:
-        pass  # Metadata embedding is non-critical
 
 
 def download_videos(
@@ -361,7 +382,7 @@ def download_videos(
     success = 0
     skipped = 0
     fail = 0
-    errors = []
+    errors: list[str] = []
 
     for i, video in enumerate(videos, 1):
         status, msg = download_video(
@@ -393,14 +414,12 @@ def get_existing_songs(directory: str) -> set[str]:
 
     Returns filenames without extension for duplicate checking.
     """
-    existing = set()
     dir_path = Path(directory)
+    if not dir_path.is_dir():
+        return set()
 
-    if not dir_path.exists():
-        return existing
-
-    for f in dir_path.iterdir():
-        if f.is_file() and f.suffix.lower() in _AUDIO_EXTENSIONS:
-            existing.add(f.stem)
-
-    return existing
+    return {
+        f.stem
+        for f in dir_path.iterdir()
+        if f.is_file() and f.suffix.lower() in _AUDIO_EXTENSIONS
+    }

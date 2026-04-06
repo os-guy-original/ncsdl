@@ -17,14 +17,23 @@ from .metadata import embed_metadata_batch
 from .styles import classify_by_genre, format_genre_stats
 
 
+def _print_table(videos: list, *, include_index: bool = False) -> None:
+    """Print a list of videos in a clean table format."""
+    for i, v in enumerate(videos, 1):
+        genre = v.parsed.genre if v.parsed else "?"
+        prefix = f"  {i:>4}. " if include_index else "  "
+        print(f"{prefix}{v.title} [{genre}]")
+
+
 def cmd_analyze(args: argparse.Namespace) -> int:
     """Analyze NCS title styles from search results."""
     print("searching NCS YouTube channel...")
 
-    if args.genre:
-        videos = search_ncs_videos(genre=args.genre, max_results=args.limit)
-    else:
-        videos = get_all_ncs_videos(max_results=args.limit)
+    videos = (
+        search_ncs_videos(genre=args.genre, max_results=args.limit)
+        if args.genre
+        else get_all_ncs_videos(max_results=args.limit)
+    )
 
     if not videos:
         print("no videos found.")
@@ -39,12 +48,10 @@ def cmd_analyze(args: argparse.Namespace) -> int:
     print(format_genre_stats(genre_counts))
 
     # Show style breakdown
-    styles = {"modern": 0, "old": 0, "bare": 0, "unknown": 0}
+    styles: dict[str, int] = {}
     for v in videos:
-        if v.parsed:
-            styles[v.parsed.style] = styles.get(v.parsed.style, 0) + 1
-        else:
-            styles["unknown"] += 1
+        key = v.parsed.style if v.parsed else "unknown"
+        styles[key] = styles.get(key, 0) + 1
 
     print()
     print("Title Style Breakdown")
@@ -52,12 +59,23 @@ def cmd_analyze(args: argparse.Namespace) -> int:
     print(f"{'Style':<20} {'Count':>5}")
     print("-" * 27)
     for style, count in sorted(styles.items()):
-        if count > 0:
-            print(f"{style:<20} {count:>5}")
+        print(f"{style:<20} {count:>5}")
 
     print()
     print(f"Total videos analyzed: {len(videos)}")
     return 0
+
+
+def _resolve_search(args: argparse.Namespace) -> tuple[list, str]:
+    """Resolve which search function to use and return (videos, search_label)."""
+    if not args.genre:
+        return search_ncs_videos(max_results=args.limit), "NCS YouTube channel"
+
+    genre = args.genre.lower()
+    if genre == "all":
+        return get_all_ncs_videos(max_results=args.limit), "all NCS videos"
+
+    return search_ncs_videos(genre=args.genre, max_results=args.limit), f"NCS {args.genre} tracks"
 
 
 def cmd_download(args: argparse.Namespace) -> int:
@@ -79,16 +97,8 @@ def cmd_download(args: argparse.Namespace) -> int:
             print(f"found {len(existing)} existing song(s) in {output_dir}")
 
     # Search for videos
-    if args.genre:
-        if args.genre.lower() == "all":
-            print("searching for all NCS videos...")
-            videos = get_all_ncs_videos(max_results=args.limit)
-        else:
-            print(f"searching NCS {args.genre} tracks...")
-            videos = search_ncs_videos(genre=args.genre, max_results=args.limit)
-    else:
-        print("searching NCS YouTube channel...")
-        videos = search_ncs_videos(max_results=args.limit)
+    print(f"searching {_resolve_search(args)[1]}...")
+    videos, _ = _resolve_search(args)
 
     if not videos:
         print("no videos found.")
@@ -98,9 +108,7 @@ def cmd_download(args: argparse.Namespace) -> int:
 
     if args.list_only:
         print()
-        for i, v in enumerate(videos, 1):
-            genre = v.parsed.genre if v.parsed else "?"
-            print(f"  {i:>4}. {v.title} [{genre}]")
+        _print_table(videos, include_index=True)
         return 0
 
     # Download

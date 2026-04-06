@@ -75,6 +75,9 @@ NCS_GENRES = frozenset({
     "Witch House",
 })
 
+# Genre lookup: lowercase -> canonical name (built once at import)
+_GENRE_LOOKUP: dict[str, str] = {g.lower(): g for g in NCS_GENRES}
+
 
 @dataclass
 class ParsedTitle:
@@ -90,7 +93,6 @@ class ParsedTitle:
 # Title format patterns (ordered by priority - most specific first)
 
 # Modern format: "Artist - Song | Genre | NCS - Copyright Free Music"
-# or "Artist - Song | Genre | NCS"
 RE_MODERN = re.compile(
     r"^(?P<artist>.+?)\s+-\s+"
     r"(?P<title>.+?)"
@@ -113,17 +115,41 @@ RE_BARE = re.compile(
     r"^(?P<artist>.+?)\s+-\s+(?P<title>.+?)\s*$"
 )
 
+# Dispatch table: (regex, style_name) tuples tried in order
+_TITLE_PATTERNS: list[tuple[re.Pattern, str]] = [
+    (RE_MODERN, "modern"),
+    (RE_OLD, "old"),
+    (RE_BARE, "bare"),
+]
+
+# Suffix patterns for extracting things like VIP, Remix, pt.II, etc.
+_SUFFIX_PATTERNS = [
+    re.compile(r"\s*\(VIP\)\s*$", re.IGNORECASE),
+    re.compile(r"\s*VIP\s*$", re.IGNORECASE),
+    re.compile(r"\s*\(Remix\)\s*$", re.IGNORECASE),
+    re.compile(r"\s*\(Sped Up\)\s*$", re.IGNORECASE),
+    re.compile(r"\s*\(\d{4}\s+Edit\)\s*$", re.IGNORECASE),
+    re.compile(r"\s*\(Hindi\)\s*$", re.IGNORECASE),
+    re.compile(r"\s*pt\.\s*II\s*$", re.IGNORECASE),
+    re.compile(r"\s*pt\.\s*2\s*$", re.IGNORECASE),
+]
+
+_FEATURING_RE = re.compile(r"\(feat\.\s+(.+?)\)", re.IGNORECASE)
+
+
+def _normalize_genre(raw: str) -> Optional[str]:
+    """Look up a genre by case-insensitive name. Returns canonical form or None."""
+    return _GENRE_LOOKUP.get(raw.lower())
+
 
 def _extract_featuring(title: str) -> tuple[str, Optional[str]]:
     """Extract featuring artist from title.
 
     Returns (clean_title, featuring_artist) or (title, None).
     """
-    match = re.search(r"\(feat\.\s+(.+?)\)", title, re.IGNORECASE)
+    match = _FEATURING_RE.search(title)
     if match:
-        featuring = match.group(1).strip()
-        clean = title[: match.start()].strip() + title[match.end():].strip()
-        return clean, featuring
+        return (title[:match.start()].strip() + title[match.end():].strip()), match.group(1).strip()
     return title, None
 
 
@@ -132,24 +158,30 @@ def _extract_suffix(title: str) -> tuple[str, Optional[str]]:
 
     Returns (clean_title, suffix) or (title, None).
     """
-    patterns = [
-        r"\s*\(VIP\)\s*$",
-        r"\s*VIP\s*$",
-        r"\s*\(Remix\)\s*$",
-        r"\s*\(Sped Up\)\s*$",
-        r"\s*\(\d{4}\s+Edit\)\s*$",
-        r"\s*\(Hindi\)\s*$",
-        r"\s*pt\.\s*II\s*$",
-        r"\s*pt\.\s*2\s*$",
-        r"\s*Dead of Night \(VIP\)\s*$",
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, title, re.IGNORECASE)
+    for pattern in _SUFFIX_PATTERNS:
+        match = pattern.search(title)
         if match:
-            suffix = match.group(0).strip()
-            clean = title[: match.start()].strip()
-            return clean, suffix
+            return title[:match.start()].strip(), match.group().strip()
     return title, None
+
+
+def _finalize_title(
+    artist: str,
+    song: str,
+    genre: Optional[str],
+    style: str,
+) -> ParsedTitle:
+    """Run shared post-processing (featuring, suffix) and return ParsedTitle."""
+    song, featuring = _extract_featuring(song)
+    song, suffix = _extract_suffix(song)
+    return ParsedTitle(
+        artist=artist.strip(),
+        song_title=song.strip(),
+        genre=genre,
+        featuring=featuring,
+        suffix=suffix,
+        style=style,
+    )
 
 
 def parse_title(title: str) -> Optional[ParsedTitle]:
@@ -159,64 +191,18 @@ def parse_title(title: str) -> Optional[ParsedTitle]:
     """
     title = title.strip()
 
-    # Try modern format first
-    match = RE_MODERN.match(title)
-    if match:
-        artist = match.group("artist").strip()
-        song = match.group("title").strip()
-        genre = match.group("genre").strip()
+    for pattern, style in _TITLE_PATTERNS:
+        match = pattern.match(title)
+        if match:
+            artist = match.group("artist").strip()
+            song = match.group("title").strip()
 
-        # Normalize genre casing
-        for known_genre in NCS_GENRES:
-            if known_genre.lower() == genre.lower():
-                genre = known_genre
-                break
+            # Only the modern format has a genre group
+            genre = None
+            if "genre" in match.groupdict():
+                genre = _normalize_genre(match.group("genre").strip())
 
-        song, featuring = _extract_featuring(song)
-        song, suffix = _extract_suffix(song)
-
-        return ParsedTitle(
-            artist=artist,
-            song_title=song.strip(),
-            genre=genre,
-            featuring=featuring,
-            suffix=suffix,
-            style="modern",
-        )
-
-    # Try old format
-    match = RE_OLD.match(title)
-    if match:
-        artist = match.group("artist").strip()
-        song = match.group("title").strip()
-
-        song, featuring = _extract_featuring(song)
-        song, suffix = _extract_suffix(song)
-
-        return ParsedTitle(
-            artist=artist,
-            song_title=song.strip(),
-            featuring=featuring,
-            suffix=suffix,
-            style="old",
-        )
-
-    # Try bare format
-    match = RE_BARE.match(title)
-    if match:
-        artist = match.group("artist").strip()
-        song = match.group("title").strip()
-
-        song, featuring = _extract_featuring(song)
-        song, suffix = _extract_suffix(song)
-
-        return ParsedTitle(
-            artist=artist,
-            song_title=song.strip(),
-            featuring=featuring,
-            suffix=suffix,
-            style="bare",
-        )
+            return _finalize_title(artist, song, genre, style)
 
     return None
 
@@ -236,7 +222,6 @@ def classify_by_genre(titles: list[str]) -> dict[str, int]:
         else:
             unrecognized += 1
 
-    # Sort by count descending
     sorted_counts = dict(sorted(counts.items(), key=lambda x: x[1], reverse=True))
     if unrecognized > 0:
         sorted_counts["Unrecognized"] = unrecognized
@@ -249,16 +234,37 @@ def format_genre_stats(genre_counts: dict[str, int]) -> str:
     if not genre_counts:
         return "No genre data available."
 
-    lines = []
-    lines.append(f"{'Genre':<25} {'Count':>5}")
-    lines.append("-" * 32)
+    lines = [
+        f"{'Genre':<25} {'Count':>5}",
+        "-" * 32,
+    ]
 
     total = 0
     for genre, count in genre_counts.items():
         lines.append(f"{genre:<25} {count:>5}")
         total += count
 
-    lines.append("-" * 32)
-    lines.append(f"{'Total':<25} {total:>5}")
+    lines.extend([
+        "-" * 32,
+        f"{'Total':<25} {total:>5}",
+    ])
 
     return "\n".join(lines)
+
+
+def build_tag_values(parsed: ParsedTitle) -> dict[str, str]:
+    """Build a dict of cleaned tag values from a parsed title."""
+    title = parsed.song_title
+    if parsed.suffix:
+        title = f"{title} {parsed.suffix}"
+
+    artist = parsed.artist
+    if parsed.featuring:
+        artist = f"{artist} feat. {parsed.featuring}"
+
+    return {
+        "title": title,
+        "artist": artist,
+        "genre": parsed.genre or "Electronic",
+        "album": "NCS - NoCopyrightSounds",
+    }
