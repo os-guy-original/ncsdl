@@ -7,6 +7,7 @@ from pathlib import Path
 
 from .downloader import (
     check_dependencies,
+    count_ncs_videos,
     download_videos,
     get_all_ncs_videos,
     get_existing_songs,
@@ -67,6 +68,20 @@ def cmd_analyze(args: argparse.Namespace) -> int:
 
     print()
     print(f"Total videos analyzed: {len(videos)}")
+    return 0
+
+
+def cmd_count(args: argparse.Namespace) -> int:
+    """Count total videos on the NCS YouTube channel."""
+    print("counting NCS videos on YouTube...")
+    count = count_ncs_videos()
+
+    if count == 0:
+        print("failed to retrieve video count.")
+        return 1
+
+    print()
+    print(f"{'Total NCS videos on YouTube':<30} {count:>8}")
     return 0
 
 
@@ -449,6 +464,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Max results (default: 50)",
     )
 
+    # count command
+    subparsers.add_parser(
+        "count",
+        help="Count total NCS videos on YouTube",
+    )
+
     # list-genres command
     genres_parser = subparsers.add_parser(
         "list-genres",
@@ -602,6 +623,7 @@ def main() -> int:
 
     commands = {
         "analyze": cmd_analyze,
+        "count": cmd_count,
         "download": cmd_download,
         "dl": cmd_download,
         "search": cmd_search,

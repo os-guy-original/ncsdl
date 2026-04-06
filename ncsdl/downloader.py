@@ -209,6 +209,43 @@ def search_ncs_videos(
     return videos
 
 
+NCS_CHANNEL_URL = "https://www.youtube.com/@NoCopyrightSounds/videos"
+
+
+def count_ncs_videos() -> int:
+    """Count total videos on the NCS YouTube channel.
+
+    Returns 0 on failure or timeout.
+    """
+    cmd = [
+        "yt-dlp",
+        NCS_CHANNEL_URL,
+        "--flat-playlist",
+        "--print",
+        "%(id)s",
+        "--no-download",
+    ]
+
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=120,
+            stdin=subprocess.DEVNULL,
+        )
+    except subprocess.TimeoutExpired:
+        return 0
+
+    count = 0
+    for line in result.stdout.splitlines():
+        line = line.strip()
+        if line and not line.startswith("ERROR") and not line.startswith("WARNING"):
+            count += 1
+
+    return count
+
+
 def get_all_ncs_videos(max_results: int = 1000) -> list[VideoInfo]:
     """Get all NCS videos by searching without genre filter."""
     return search_ncs_videos(max_results=max_results)
