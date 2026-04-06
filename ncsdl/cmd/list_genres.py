@@ -2,11 +2,14 @@
 
 from ..cmd._shared import _resolve_search
 from ..downloader import search_ncs_videos
-from ..styles import classify_by_genre, NCS_GENRES
+from ..styles import classify_by_genre, get_genres
 
 
 def run(args) -> int:
-    genres = sorted(NCS_GENRES)
+    genres = sorted(get_genres(), key=str.lower)
+    if not genres:
+        print("no genres detected. run 'ncsdl detect-genres' first.")
+        return 1
 
     if args.verbose:
         print("fetching genre statistics (this may take a moment)...")

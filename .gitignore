@@ -42,3 +42,4 @@ test_downloads/
 # Logs
 *.log
 .qwen/
+ncsdl/genres.json

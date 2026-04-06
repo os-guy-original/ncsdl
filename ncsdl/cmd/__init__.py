@@ -3,6 +3,7 @@
 from .analyze import run as cmd_analyze
 from .check_dupes import run as cmd_check_dupes
 from .count import run as cmd_count
+from .detect_genres import run as cmd_detect_genres
 from .download import run as cmd_download
 from .list_genres import run as cmd_list_genres
 from .metadata import run as cmd_metadata
@@ -16,6 +17,8 @@ COMMANDS = {
     "download": cmd_download,
     "dl": cmd_download,
     "search": cmd_search,
+    "detect-genres": cmd_detect_genres,
+    "dg": cmd_detect_genres,
     "list-genres": cmd_list_genres,
     "genres": cmd_list_genres,
     "lg": cmd_list_genres,

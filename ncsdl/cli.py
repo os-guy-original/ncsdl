@@ -40,6 +40,10 @@ def build_parser() -> argparse.ArgumentParser:
     # count
     subparsers.add_parser("count", help="Count total NCS videos on YouTube")
 
+    # detect-genres
+    p = subparsers.add_parser("detect-genres", aliases=["dg"], help="Detect genres from NCS YouTube channel")
+    p.add_argument("--refresh", action="store_true", help="Re-scan channel and update cache")
+
     # list-genres
     p = subparsers.add_parser("list-genres", aliases=["genres", "lg"], help="List all supported NCS genres")
     p.add_argument("--verbose", "-v", action="store_true", help="Show genre counts from search")

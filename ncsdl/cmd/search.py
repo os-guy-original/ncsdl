@@ -2,7 +2,7 @@
 
 from ..downloader import get_all_ncs_videos, search_ncs_videos
 from ..cmd._shared import _print_table
-from ..styles import NCS_GENRES
+from ..styles import get_genres
 
 
 def run(args) -> int:
@@ -11,8 +11,9 @@ def run(args) -> int:
 
     print(f"searching for '{args.pattern}'...")
 
+    genres = get_genres()
     genre_match = None
-    for genre in NCS_GENRES:
+    for genre in genres:
         if genre.lower() == pattern:
             genre_match = genre
             break
