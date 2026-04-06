@@ -57,7 +57,9 @@ def check_dependencies() -> list[str]:
     return missing
 
 
-# Title patterns that indicate compilation/mix videos, not individual songs
+# Title patterns that indicate compilation/mix videos, not individual songs.
+# Kept minimal — duration (>10 min) catches most mixes.
+# Avoid patterns like "live", "mashup", "radio", "best of" which match real song titles.
 _COMPILATION_PATTERNS = frozenset({
     "top 50",
     "top 20",
@@ -65,16 +67,9 @@ _COMPILATION_PATTERNS = frozenset({
     "top 90",
     "top 30",
     "top 10",
-    "best of",
-    "most popular",
     "subscriber mix",
-    "mashup",
-    "live ",
-    "radio",
-    "hours",
     "most viewed",
     "all time",
-    "year (",
     "popular songs by",
 })
 
