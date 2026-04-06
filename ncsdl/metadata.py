@@ -5,28 +5,16 @@ Embeds song information (artist, title, genre, etc.) as ID3/MP3 tags.
 
 import os
 import subprocess
-import sys
 import tempfile
 from pathlib import Path
 from typing import Optional
 
-from .styles import ParsedTitle, parse_title
-
-
-def check_mutagen() -> bool:
-    """Check if mutagen (eyeD3 alternative) is available."""
-    try:
-        import mutagen
-
-        return True
-    except ImportError:
-        return False
+from .styles import ParsedTitle
 
 
 def embed_metadata(
     filepath: str,
     parsed: Optional[ParsedTitle] = None,
-    title: Optional[str] = None,
 ) -> tuple[bool, str]:
     """Embed metadata into an audio file.
 
@@ -35,17 +23,12 @@ def embed_metadata(
     Args:
         filepath: Path to the audio file.
         parsed: ParsedTitle from style detection.
-        title: Raw video title (fallback if parsed is None).
 
     Returns:
         Tuple of (success, message).
     """
     if not os.path.exists(filepath):
         return False, f"File not found: {filepath}"
-
-    # Parse title if not provided
-    if parsed is None and title:
-        parsed = parse_title(title)
 
     if parsed is None:
         return False, "Could not parse title for metadata"

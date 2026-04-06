@@ -1,13 +1,18 @@
 """YouTube search and download functionality for NCS songs."""
 
 import os
+import re
 import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from .styles import NCS_GENRES, ParsedTitle, parse_title
+from .styles import parse_title
+
+
+# Unsafe characters for filenames (regex pattern)
+_UNSAFE_CHARS = re.compile(r'[<>:"/\\|?*]')
 
 
 @dataclass
@@ -132,7 +137,6 @@ def search_ncs_videos(
             continue
 
         # The URL always starts with "https://" - use this to split
-        url_match = None
         url_start = line.find("|https://")
         if url_start == -1:
             continue
@@ -291,15 +295,9 @@ def download_videos(
 
 def _sanitize_filename(name: str) -> str:
     """Remove unsafe characters from filename."""
-    # Remove or replace unsafe characters
-    unsafe = '<>:"/\\|?*'
-    for char in unsafe:
-        name = name.replace(char, "")
-    # Collapse multiple spaces
+    name = _UNSAFE_CHARS.sub("", name)
     name = " ".join(name.split())
-    # Trim
-    name = name.strip()
-    return name
+    return name.strip()
 
 
 def get_existing_songs(directory: str) -> set[str]:
