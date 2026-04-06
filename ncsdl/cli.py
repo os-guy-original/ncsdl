@@ -12,6 +12,10 @@ from .downloader import (
     get_existing_songs,
     search_ncs_videos,
     SUPPORTED_FORMATS,
+    save_queue,
+    load_queue,
+    clear_queue,
+    filter_downloaded,
 )
 from .metadata import embed_metadata_batch
 from .styles import classify_by_genre, format_genre_stats, NCS_GENRES
@@ -267,6 +271,9 @@ def cmd_download(args: argparse.Namespace) -> int:
         _print_table(videos, include_index=True)
         return 0
 
+    # Save queue for potential resume
+    save_queue(videos, output_dir)
+
     # Download
     print()
     print(f"format: {audio_format}  |  thumbnails: {'yes' if embed_thumbnail else 'no'}")
@@ -281,6 +288,69 @@ def cmd_download(args: argparse.Namespace) -> int:
         embed_thumbnail=embed_thumbnail,
         max_retries=args.retries,
     )
+
+    print()
+    print(f"done: {success} downloaded, {skipped} skipped, {fail} failed")
+
+    if errors:
+        print()
+        print("errors:")
+        for err in errors[:10]:
+            print(f"  - {err}")
+        if len(errors) > 10:
+            print(f"  ... and {len(errors) - 10} more")
+
+    return 0 if fail == 0 else 1
+
+
+def cmd_resume(args: argparse.Namespace) -> int:
+    """Resume an interrupted download."""
+    output_dir = args.output or os.path.expanduser("~/ncs_downloads")
+    audio_format = args.format or "m4a"
+    embed_thumbnail = not args.no_thumbnail
+
+    if audio_format not in SUPPORTED_FORMATS:
+        print(f"unsupported format: {audio_format}", file=sys.stderr)
+        return 1
+
+    # Load saved queue
+    queue = load_queue(output_dir)
+    if not queue:
+        print(f"no saved queue found in {output_dir}")
+        print("run 'ncsdl download' first to create a queue.")
+        return 1
+
+    print(f"loaded {len(queue)} video(s) from queue")
+
+    # Check existing
+    existing = get_existing_songs(output_dir)
+    remaining = filter_downloaded(queue, existing)
+
+    if not remaining:
+        print("all videos already downloaded.")
+        clear_queue(output_dir)
+        return 0
+
+    print(f"{len(remaining)} video(s) remaining to download")
+
+    # Download
+    print()
+    print(f"format: {audio_format}  |  thumbnails: {'yes' if embed_thumbnail else 'no'}")
+    print(f"output: {output_dir}")
+    print("-" * 40)
+
+    success, skipped, fail, errors = download_videos(
+        remaining,
+        output_dir,
+        existing,
+        audio_format=audio_format,
+        embed_thumbnail=embed_thumbnail,
+        max_retries=args.retries,
+    )
+
+    # Clear queue on success
+    if fail == 0:
+        clear_queue(output_dir)
 
     print()
     print(f"done: {success} downloaded, {skipped} skipped, {fail} failed")
@@ -454,6 +524,33 @@ def build_parser() -> argparse.ArgumentParser:
         help="Retry attempts per failed download (default: 2)",
     )
 
+    # resume command
+    resume_parser = subparsers.add_parser(
+        "resume",
+        help="Resume an interrupted download",
+    )
+    resume_parser.add_argument(
+        "--output", "-o",
+        help="Output directory (default: ~/ncs_downloads)",
+    )
+    resume_parser.add_argument(
+        "--format", "-f",
+        choices=list(SUPPORTED_FORMATS.keys()),
+        default="m4a",
+        help="Audio format (default: m4a)",
+    )
+    resume_parser.add_argument(
+        "--no-thumbnail",
+        action="store_true",
+        help="Do not embed album thumbnail",
+    )
+    resume_parser.add_argument(
+        "--retries", "-r",
+        type=int,
+        default=2,
+        help="Retry attempts per failed download (default: 2)",
+    )
+
     # metadata command
     meta_parser = subparsers.add_parser(
         "metadata",
@@ -512,6 +609,7 @@ def main() -> int:
         "genres": cmd_list_genres,
         "lg": cmd_list_genres,
         "stats": cmd_stats,
+        "resume": cmd_resume,
         "metadata": cmd_metadata,
         "meta": cmd_metadata,
         "check-dupes": cmd_check_dupes,
