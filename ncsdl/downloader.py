@@ -171,6 +171,7 @@ def search_ncs_videos(
             capture_output=True,
             text=True,
             timeout=120,
+            stdin=subprocess.DEVNULL,
         )
     except subprocess.TimeoutExpired:
         print("search timed out. try reducing max_results.", file=sys.stderr)
@@ -354,6 +355,7 @@ def download_video(
             capture_output=True,
             text=True,
             timeout=300,
+            stdin=subprocess.DEVNULL,
         )
     except subprocess.TimeoutExpired:
         return "fail", f"timeout: {safe_name}"

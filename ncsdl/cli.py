@@ -14,7 +14,7 @@ from .downloader import (
     SUPPORTED_FORMATS,
 )
 from .metadata import embed_metadata_batch
-from .styles import classify_by_genre, format_genre_stats
+from .styles import classify_by_genre, format_genre_stats, NCS_GENRES
 
 
 def _print_table(videos: list, *, include_index: bool = False) -> None:
@@ -64,6 +64,162 @@ def cmd_analyze(args: argparse.Namespace) -> int:
     print()
     print(f"Total videos analyzed: {len(videos)}")
     return 0
+
+
+def cmd_search(args: argparse.Namespace) -> int:
+    """Search for specific NCS songs by pattern."""
+    pattern = args.pattern.lower()
+    limit = args.limit or 50
+
+    print(f"searching for '{args.pattern}'...")
+
+    # Search by genre if pattern matches a known genre
+    genre_match = None
+    for genre in NCS_GENRES:
+        if genre.lower() == pattern:
+            genre_match = genre
+            break
+
+    if genre_match:
+        videos = search_ncs_videos(genre=genre_match, max_results=limit)
+    else:
+        # Search broadly and filter client-side
+        videos = get_all_ncs_videos(max_results=limit * 3)
+        videos = [
+            v for v in videos
+            if pattern in v.title.lower()
+            or (v.parsed and pattern in v.parsed.artist.lower())
+            or (v.parsed and pattern in v.parsed.song_title.lower())
+        ][:limit]
+
+    if not videos:
+        print("no results found.")
+        return 1
+
+    print(f"found {len(videos)} result(s)\n")
+    _print_table(videos, include_index=True)
+    return 0
+
+
+def cmd_list_genres(args: argparse.Namespace) -> int:
+    """List all supported NCS genres."""
+    genres = sorted(NCS_GENRES)
+
+    if args.verbose:
+        # Show genres with search counts
+        print("fetching genre statistics (this may take a moment)...")
+        videos = search_ncs_videos(max_results=200)
+        counts = classify_by_genre([v.title for v in videos])
+
+        # Build a complete list showing all genres, even those with 0 results
+        print()
+        print(f"{'Genre':<25} {'Count':>5}")
+        print("-" * 32)
+        for genre in genres:
+            count = counts.get(genre, 0)
+            if count > 0 or args.show_empty:
+                print(f"{genre:<25} {count:>5}")
+        print("-" * 32)
+        print(f"{'Total':<25} {sum(counts.values()):>5}")
+        print()
+        print(f"genres with results: {sum(1 for c in counts.values() if c > 0)}")
+    else:
+        # Simple list
+        cols = 3
+        col_width = 25
+        for i, genre in enumerate(genres, 1):
+            print(f"{genre:<{col_width}}", end="")
+            if i % cols == 0:
+                print()
+        if len(genres) % cols:
+            print()
+
+    print(f"\ntotal genres: {len(genres)}")
+    return 0
+
+
+def cmd_stats(args: argparse.Namespace) -> int:
+    """Show download statistics for a directory."""
+    directory = args.directory
+    if not os.path.isdir(directory):
+        print(f"directory not found: {directory}")
+        return 1
+
+    dir_path = Path(directory)
+    audio_exts = {".mp3", ".m4a", ".flac", ".opus", ".ogg", ".wav"}
+
+    files = [f for f in dir_path.iterdir() if f.is_file() and f.suffix.lower() in audio_exts]
+
+    if not files:
+        print(f"no audio files found in {directory}")
+        return 0
+
+    # Gather stats
+    total_size = sum(f.stat().st_size for f in files)
+    ext_counts: dict[str, int] = {}
+    genres_detected: dict[str, int] = {}
+
+    for f in files:
+        ext_counts[f.suffix.lower()] = ext_counts.get(f.suffix.lower(), 0) + 1
+        # Try to read genre from file metadata via mutagen
+        genre = _read_genre_from_file(f)
+        if genre:
+            genres_detected[genre] = genres_detected.get(genre, 0) + 1
+
+    print(f"Directory: {directory}")
+    print()
+    print(f"{'Metric':<20} {'Value':>15}")
+    print("-" * 37)
+    print(f"{'Total files':<20} {len(files):>15}")
+    print(f"{'Total size':<20} {total_size / 1024 / 1024:>14.1f} MB")
+    print(f"{'Avg file size':<20} {total_size / len(files) / 1024:>14.1f} KB")
+    print(f"{'Genres detected':<20} {sum(genres_detected.values()):>15}")
+
+    if genres_detected:
+        print()
+        print("Genre Breakdown")
+        print(f"{'Genre':<20} {'Count':>5}")
+        print("-" * 27)
+        for genre, count in sorted(genres_detected.items(), key=lambda x: x[1], reverse=True):
+            print(f"{genre:<20} {count:>5}")
+
+    print()
+    print("Format Breakdown")
+    print(f"{'Format':<20} {'Count':>5}")
+    print("-" * 27)
+    for ext, count in sorted(ext_counts.items(), key=lambda x: x[1], reverse=True):
+        print(f"{ext:<20} {count:>5}")
+
+    return 0
+
+
+def _read_genre_from_file(filepath: Path) -> str:
+    """Read genre tag from an audio file using mutagen."""
+    try:
+        ext = filepath.suffix.lower()
+        if ext == ".mp3":
+            from mutagen.mp3 import MP3
+            audio = MP3(str(filepath))
+            if audio.tags and "TCON" in audio.tags:
+                return str(audio.tags["TCON"])
+        elif ext == ".m4a":
+            from mutagen.mp4 import MP4
+            audio = MP4(str(filepath))
+            if audio.tags and "\xa9gen" in audio.tags:
+                return str(audio.tags["\xa9gen"][0])
+        elif ext == ".flac":
+            from mutagen.flac import FLAC
+            audio = FLAC(str(filepath))
+            if "genre" in audio:
+                return audio["genre"][0]
+        elif ext in (".opus", ".ogg"):
+            from mutagen.oggvorbis import OggVorbis
+            audio = OggVorbis(str(filepath))
+            if "genre" in audio:
+                return audio["genre"][0]
+    except Exception:
+        pass
+    return ""
 
 
 def _resolve_search(args: argparse.Namespace) -> tuple[list, str]:
@@ -206,6 +362,49 @@ def build_parser() -> argparse.ArgumentParser:
         help="Max videos to analyze (default: 200)",
     )
 
+    # search command
+    search_parser = subparsers.add_parser(
+        "search",
+        help="Search for specific NCS songs",
+    )
+    search_parser.add_argument(
+        "pattern",
+        help="Search pattern (artist name, song title, or genre)",
+    )
+    search_parser.add_argument(
+        "--limit", "-l",
+        type=int,
+        default=50,
+        help="Max results (default: 50)",
+    )
+
+    # list-genres command
+    genres_parser = subparsers.add_parser(
+        "list-genres",
+        aliases=["genres", "lg"],
+        help="List all supported NCS genres",
+    )
+    genres_parser.add_argument(
+        "--verbose", "-v",
+        action="store_true",
+        help="Show genre counts from search",
+    )
+    genres_parser.add_argument(
+        "--show-empty",
+        action="store_true",
+        help="Show genres with zero results (requires -v)",
+    )
+
+    # stats command
+    stats_parser = subparsers.add_parser(
+        "stats",
+        help="Show download statistics for a directory",
+    )
+    stats_parser.add_argument(
+        "directory",
+        help="Directory to analyze",
+    )
+
     # download command
     dl_parser = subparsers.add_parser(
         "download",
@@ -301,6 +500,11 @@ def main() -> int:
         "analyze": cmd_analyze,
         "download": cmd_download,
         "dl": cmd_download,
+        "search": cmd_search,
+        "list-genres": cmd_list_genres,
+        "genres": cmd_list_genres,
+        "lg": cmd_list_genres,
+        "stats": cmd_stats,
         "metadata": cmd_metadata,
         "meta": cmd_metadata,
         "check-dupes": cmd_check_dupes,
