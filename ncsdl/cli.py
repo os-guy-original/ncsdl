@@ -279,6 +279,7 @@ def cmd_download(args: argparse.Namespace) -> int:
         existing,
         audio_format=audio_format,
         embed_thumbnail=embed_thumbnail,
+        max_retries=args.retries,
     )
 
     print()
@@ -445,6 +446,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-check-dupes",
         action="store_true",
         help="Skip duplicate checking",
+    )
+    dl_parser.add_argument(
+        "--retries", "-r",
+        type=int,
+        default=2,
+        help="Retry attempts per failed download (default: 2)",
     )
 
     # metadata command

@@ -301,6 +301,7 @@ def download_video(
     existing_files: set[str],
     audio_format: str = "m4a",
     embed_thumbnail: bool = True,
+    max_retries: int = 2,
 ) -> tuple[str, str]:
     """Download a single video as an audio file.
 
@@ -310,6 +311,7 @@ def download_video(
         existing_files: Set of existing filenames for duplicate check.
         audio_format: Output audio format (m4a, flac, opus, mp3).
         embed_thumbnail: Whether to embed album art.
+        max_retries: Number of retry attempts on failure.
 
     Returns:
         Tuple of (status, message) where status is 'ok', 'skip', or 'fail'.
@@ -349,24 +351,28 @@ def download_video(
     if embed_thumbnail:
         cmd.append("--embed-thumbnail")
 
-    try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=300,
-            stdin=subprocess.DEVNULL,
-        )
-    except subprocess.TimeoutExpired:
-        return "fail", f"timeout: {safe_name}"
+    last_error = ""
+    for attempt in range(1, max_retries + 2):
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=300,
+                stdin=subprocess.DEVNULL,
+            )
+        except subprocess.TimeoutExpired:
+            last_error = "timeout"
+            continue
 
-    if result.returncode == 0 and os.path.exists(output_path):
-        if video.parsed:
-            _embed_metadata_post(output_path, video.parsed)
-        return "ok", f"ok: {safe_name}.{ext}"
+        if result.returncode == 0 and os.path.exists(output_path):
+            if video.parsed:
+                _embed_metadata_post(output_path, video.parsed)
+            return "ok", f"ok: {safe_name}.{ext}"
 
-    error = result.stderr.strip() if result.stderr else "unknown error"
-    return "fail", f"fail: {safe_name} ({error})"
+        last_error = result.stderr.strip() if result.stderr else "unknown error"
+
+    return "fail", f"fail: {safe_name} ({last_error})"
 
 
 def download_videos(
@@ -375,6 +381,7 @@ def download_videos(
     existing_files: set[str],
     audio_format: str = "m4a",
     embed_thumbnail: bool = True,
+    max_retries: int = 2,
 ) -> tuple[int, int, int, list[str]]:
     """Download multiple videos.
 
@@ -391,6 +398,7 @@ def download_videos(
             video, output_dir, existing_files,
             audio_format=audio_format,
             embed_thumbnail=embed_thumbnail,
+            max_retries=max_retries,
         )
         if status == "ok":
             success += 1
