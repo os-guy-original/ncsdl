@@ -88,7 +88,7 @@ def cmd_count(args: argparse.Namespace) -> int:
 def cmd_search(args: argparse.Namespace) -> int:
     """Search for specific NCS songs by pattern."""
     pattern = args.pattern.lower()
-    limit = args.limit or 50
+    limit = args.limit
 
     print(f"searching for '{args.pattern}'...")
 
@@ -103,7 +103,8 @@ def cmd_search(args: argparse.Namespace) -> int:
         videos = search_ncs_videos(genre=genre_match, max_results=limit)
     else:
         # Search broadly and filter client-side
-        videos = get_all_ncs_videos(max_results=limit * 3)
+        search_count = limit * 3 if limit > 0 else 5000
+        videos = get_all_ncs_videos(max_results=search_count)
         videos = [
             v for v in videos
             if pattern in v.title.lower()
@@ -444,8 +445,8 @@ def build_parser() -> argparse.ArgumentParser:
     analyze_parser.add_argument(
         "--limit", "-l",
         type=int,
-        default=200,
-        help="Max videos to analyze (default: 200)",
+        default=0,
+        help="Max videos to analyze (default: 0 = entire library)",
     )
 
     # search command
@@ -460,8 +461,8 @@ def build_parser() -> argparse.ArgumentParser:
     search_parser.add_argument(
         "--limit", "-l",
         type=int,
-        default=50,
-        help="Max results (default: 50)",
+        default=0,
+        help="Max results (default: 0 = no limit)",
     )
 
     # count command
@@ -514,8 +515,8 @@ def build_parser() -> argparse.ArgumentParser:
     dl_parser.add_argument(
         "--limit", "-l",
         type=int,
-        default=100,
-        help="Max videos to download (default: 100)",
+        default=0,
+        help="Max videos to download (default: 0 = entire library)",
     )
     dl_parser.add_argument(
         "--format", "-f",

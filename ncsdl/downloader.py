@@ -137,49 +137,38 @@ def _parse_ytdlp_line(line: str) -> Optional[tuple[str, str, str, str]]:
     return video_id, title, url, duration
 
 
-def search_ncs_videos(
-    genre: Optional[str] = None,
-    max_results: int = 100,
-) -> list[VideoInfo]:
-    """Search NCS YouTube channel for videos.
-
-    Args:
-        genre: If provided, only return videos matching this genre.
-        max_results: Maximum number of results to return.
-
-    Returns:
-        List of VideoInfo objects.
-    """
-    query = "NoCopyrightSounds"
-    if genre:
-        query = f"NoCopyrightSounds | {genre} |"
-
-    # Request more results to account for compilation filtering
-    search_count = max_results * 3
-
-    cmd = [
+def _build_search_cmd(query: str, count: int) -> list[str]:
+    """Build yt-dlp command for searching."""
+    return [
         "yt-dlp",
-        f"ytsearch{search_count}:{query}",
+        f"ytsearch{count}:{query}",
         "--flat-playlist",
         "--print",
         "%(id)s|%(title)s|%(url)s|%(duration_string)s",
         "--no-download",
     ]
 
-    try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=120,
-            stdin=subprocess.DEVNULL,
-        )
-    except subprocess.TimeoutExpired:
-        print("search timed out. try reducing max_results.", file=sys.stderr)
-        return []
 
+def _build_channel_cmd() -> list[str]:
+    """Build yt-dlp command for the NCS channel uploads playlist."""
+    return [
+        "yt-dlp",
+        NCS_CHANNEL_URL,
+        "--flat-playlist",
+        "--print",
+        "%(id)s|%(title)s|%(url)s|%(duration_string)s",
+        "--no-download",
+    ]
+
+
+def _parse_video_lines(
+    lines: list[str],
+    genre: Optional[str],
+    max_results: int,
+) -> list[VideoInfo]:
+    """Parse yt-dlp output lines into VideoInfo objects."""
     videos: list[VideoInfo] = []
-    for line in result.stdout.splitlines():
+    for line in lines:
         parsed_line = _parse_ytdlp_line(line)
         if parsed_line is None:
             continue
@@ -195,7 +184,7 @@ def search_ncs_videos(
             if not parsed.genre or parsed.genre.lower() != genre.lower():
                 continue
 
-        if len(videos) >= max_results:
+        if max_results > 0 and len(videos) >= max_results:
             break
 
         videos.append(VideoInfo(
@@ -207,6 +196,49 @@ def search_ncs_videos(
         ))
 
     return videos
+
+
+def search_ncs_videos(
+    genre: Optional[str] = None,
+    max_results: int = 0,
+) -> list[VideoInfo]:
+    """Search NCS YouTube channel for videos.
+
+    Uses the channel uploads playlist for full-library scans,
+    and yt-dlp search for genre-filtered queries.
+
+    Args:
+        genre: If provided, only return videos matching this genre.
+        max_results: Maximum number of results to return. 0 = no limit.
+
+    Returns:
+        List of VideoInfo objects.
+    """
+    # Use channel URL directly when no genre filter + unlimited
+    if not genre and max_results == 0:
+        cmd = _build_channel_cmd()
+        timeout = 180
+    else:
+        limit = max_results if max_results > 0 else 5000
+        query = "NoCopyrightSounds"
+        if genre:
+            query = f"NoCopyrightSounds | {genre} |"
+        cmd = _build_search_cmd(query, limit * 3)
+        timeout = 120
+
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            stdin=subprocess.DEVNULL,
+        )
+    except subprocess.TimeoutExpired:
+        print("search timed out. try reducing max_results.", file=sys.stderr)
+        return []
+
+    return _parse_video_lines(result.stdout.splitlines(), genre, max_results)
 
 
 NCS_CHANNEL_URL = "https://www.youtube.com/@NoCopyrightSounds/videos"
