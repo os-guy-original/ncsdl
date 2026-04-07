@@ -46,4 +46,5 @@ def run(args) -> int:
         audio_format, embed_thumbnail, args.retries,
         cookies_from_browser=args.cookies_from_browser,
         cookies_file=args.cookies_file,
+        download_unwanted_formats=args.download_unwanted_formats,
     )

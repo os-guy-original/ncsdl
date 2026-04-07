@@ -68,6 +68,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--include-mixes", "-m", action="store_true", help="Include mixes and compilations")
     p.add_argument("--cookies-from-browser", metavar="BROWSER", help="Browser to extract cookies from (e.g. firefox, chrome)")
     p.add_argument("--cookies-file", metavar="FILE", help="Path to a netscape cookies file")
+    p.add_argument("--download-unwanted-formats", action="store_true", help="Auto-accept alternative format when requested format is unavailable")
 
     # resume
     p = subparsers.add_parser("resume", help="Resume an interrupted download")
@@ -78,6 +79,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--include-mixes", "-m", action="store_true", help="Include mixes and compilations")
     p.add_argument("--cookies-from-browser", metavar="BROWSER", help="Browser to extract cookies from (e.g. firefox, chrome)")
     p.add_argument("--cookies-file", metavar="FILE", help="Path to a netscape cookies file")
+    p.add_argument("--download-unwanted-formats", action="store_true", help="Auto-accept alternative format when requested format is unavailable")
 
     # metadata
     p = subparsers.add_parser("metadata", aliases=["meta"], help="Embed metadata into audio files")

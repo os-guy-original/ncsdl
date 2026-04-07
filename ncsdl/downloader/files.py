@@ -93,7 +93,13 @@ def get_ncsdl_id(filepath: str) -> str | None:
         try:
             from mutagen.flac import FLAC
             from mutagen.oggvorbis import OggVorbis
-            audio = FLAC(filepath) if ext == ".flac" else OggVorbis(filepath)
+            from mutagen.oggopus import OggOpus
+            if ext == ".flac":
+                audio = FLAC(filepath)
+            elif ext == ".opus":
+                audio = OggOpus(filepath)
+            else:
+                audio = OggVorbis(filepath)
             tags = audio.get("ncsdl_id", [])
             if tags:
                 return tags[0]

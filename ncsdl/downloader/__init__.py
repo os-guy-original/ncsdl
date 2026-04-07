@@ -1,6 +1,11 @@
 """YouTube search and download functionality for NCS songs."""
 
-from .download import download_video, download_videos
+from .download import (
+    download_video,
+    download_videos,
+    set_fallback_mode,
+    get_fallback_mode,
+)
 from .files import (
     SUPPORTED_FORMATS,
     get_existing_songs,

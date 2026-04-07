@@ -62,9 +62,15 @@ def _tag_m4a(path: str, tags: dict[str, str], video_id: str) -> None:
 def _tag_vorbis(path: str, tags: dict[str, str], video_id: str) -> None:
     from mutagen.flac import FLAC
     from mutagen.oggvorbis import OggVorbis
+    from mutagen.oggopus import OggOpus
 
     ext = os.path.splitext(path)[1].lower()
-    audio = FLAC(path) if ext == ".flac" else OggVorbis(path)
+    if ext == ".flac":
+        audio = FLAC(path)
+    elif ext == ".opus":
+        audio = OggOpus(path)
+    else:
+        audio = OggVorbis(path)
     audio["title"] = tags["title"]
     audio["artist"] = tags["artist"]
     audio["album"] = tags["album"]
@@ -196,6 +202,49 @@ def _check_by_id(
     return False, ""
 
 
+# Global fallback mode: "ask" | "always" | "stop"
+_fallback_mode: str = "ask"
+
+
+def set_fallback_mode(value: str) -> None:
+    """Set fallback mode: 'ask', 'always', or 'stop'."""
+    global _fallback_mode
+    _fallback_mode = value
+
+
+def get_fallback_mode() -> str:
+    """Get current fallback mode."""
+    return _fallback_mode
+
+
+def _format_unavailable_error(stderr: str) -> bool:
+    """Check if stderr indicates format not available."""
+    return "Requested format is not available" in stderr
+
+
+def _try_download(
+    cmd: list[str],
+    expected_path: str,
+    timeout: int = 300,
+) -> tuple[bool, str]:
+    """Run a yt-dlp command. Returns (success, error_msg)."""
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            stdin=subprocess.DEVNULL,
+        )
+    except subprocess.TimeoutExpired:
+        return False, "timeout"
+
+    if result.returncode == 0 and os.path.exists(expected_path):
+        return True, ""
+
+    return False, result.stderr.strip() if result.stderr else "unknown error"
+
+
 def download_video(
     video: VideoInfo,
     output_dir: str,
@@ -207,10 +256,14 @@ def download_video(
     misnamed: dict | None = None,
     cookies_from_browser: str | None = None,
     cookies_file: str | None = None,
-) -> tuple[str, str, bool]:
+    fallback_handler: callable | None = None,
+) -> tuple[str, str, bool, bool]:
     """Download a single video as an audio file.
 
-    Returns (status, message, was_redownloaded).
+    Tries the requested format first. If unavailable, uses fallback_handler
+    to decide whether to accept an alternative format.
+
+    Returns (status, message, was_redownloaded, should_stop).
     """
     output_dir = str(Path(output_dir).expanduser().resolve())
     os.makedirs(output_dir, exist_ok=True)
@@ -228,8 +281,8 @@ def download_video(
         found, msg = _check_by_id(output_dir, video, safe_name, ext, track_data, misnamed)
         if found:
             if "renamed" in msg:
-                return "skip", f"skip ({msg}): {safe_name}", False
-            return "skip", f"skip: {safe_name}", False
+                return "skip", f"skip ({msg}): {safe_name}", False, False
+            return "skip", f"skip: {safe_name}", False, False
 
     # Corrupted file with correct name: delete before re-downloading
     expected_path = os.path.join(output_dir, f"{safe_name}.{ext}")
@@ -239,9 +292,10 @@ def download_video(
 
     # Fast path: raw filename set
     if safe_name in existing_files and os.path.exists(expected_path) and is_audio_valid(expected_path):
-        return "skip", f"skip: {safe_name}", False
+        return "skip", f"skip: {safe_name}", False, False
 
-    cmd = [
+    # Build base command parts
+    base_cmd = [
         "yt-dlp",
         video.url,
         "-x",
@@ -258,46 +312,74 @@ def download_video(
     ]
 
     if embed_thumbnail:
-        cmd.append("--embed-thumbnail")
-
+        base_cmd.append("--embed-thumbnail")
     if cookies_from_browser:
-        cmd.extend(["--cookies-from-browser", cookies_from_browser])
+        base_cmd.extend(["--cookies-from-browser", cookies_from_browser])
     if cookies_file:
-        cmd.extend(["--cookies", cookies_file])
+        base_cmd.extend(["--cookies", cookies_file])
 
-    last_error = ""
+    # Strategy 1: Try exact format first
+    exact_cmd = base_cmd.copy()
+    exact_cmd.insert(2, f"ba[ext={audio_format}]")
+
+    success, err = _try_download(exact_cmd, expected_path)
+    used_fallback = False
+
+    if not success and _format_unavailable_error(err):
+        # Format not available - check fallback mode
+        mode = get_fallback_mode()
+
+        if mode == "always":
+            used_fallback = True
+        elif mode == "ask" and fallback_handler:
+            choice = fallback_handler()  # Returns "always", "now", or "stop"
+            if choice == "stop":
+                return "stop", f"stop (format unavailable): {safe_name}", False, True
+            if choice == "always":
+                set_fallback_mode("always")
+                used_fallback = True
+            elif choice == "now":
+                used_fallback = True
+
+        if used_fallback:
+            # Fallback: let yt-dlp pick best available audio and convert
+            fallback_cmd = base_cmd.copy()
+            fallback_cmd.insert(2, "bestaudio/ba")
+            success, err = _try_download(fallback_cmd, expected_path)
+
+    last_error = err
     for attempt in range(1, max_retries + 2):
-        try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=300,
-                stdin=subprocess.DEVNULL,
-            )
-        except subprocess.TimeoutExpired:
+        if success:
+            break
+
+        if "timeout" in last_error:
             last_error = "timeout"
             continue
 
-        if result.returncode == 0 and os.path.exists(expected_path):
-            if not is_audio_valid(expected_path):
-                last_error = "corrupted file"
-                os.remove(expected_path)
-                continue
+        # Try again (for network errors, not format issues)
+        if used_fallback:
+            fallback_cmd = base_cmd.copy()
+            fallback_cmd.insert(2, "bestaudio/ba")
+            success, last_error = _try_download(fallback_cmd, expected_path)
+        else:
+            success, last_error = _try_download(base_cmd, expected_path)
 
-            if video.parsed:
-                _embed_metadata(expected_path, video.parsed, video.video_id)
+    if success and os.path.exists(expected_path):
+        if not is_audio_valid(expected_path):
+            os.remove(expected_path)
+            return "fail", f"fail: {safe_name} (corrupted file)", False, False
 
-            if track_data is not None:
-                record_download(output_dir, video.video_id, safe_name, video.title)
+        if video.parsed:
+            _embed_metadata(expected_path, video.parsed, video.video_id)
 
-            if redownloading:
-                return "ok", f"ok*: {safe_name}.{ext}", True
-            return "ok", f"ok: {safe_name}.{ext}", False
+        if track_data is not None:
+            record_download(output_dir, video.video_id, safe_name, video.title)
 
-        last_error = result.stderr.strip() if result.stderr else "unknown error"
+        if used_fallback or redownloading:
+            return "ok", f"ok*: {safe_name}.{ext}", redownloading, False
+        return "ok", f"ok: {safe_name}.{ext}", False, False
 
-    return "fail", f"fail: {safe_name} ({last_error})", False
+    return "fail", f"fail: {safe_name} ({last_error})", False, False
 
 
 def download_videos(
@@ -309,6 +391,7 @@ def download_videos(
     max_retries: int = 2,
     cookies_from_browser: str | None = None,
     cookies_file: str | None = None,
+    fallback_handler: callable | None = None,
 ) -> tuple[int, int, int, int, int, list[str]]:
     """Download multiple videos.
 
@@ -333,7 +416,7 @@ def download_videos(
         # Scan for misnamed files once per video (keeps it fresh as files get renamed)
         misnamed = _scan_for_misnamed(output_dir, safe_name, fmt["ext"])
 
-        status, msg, was_redownloaded = download_video(
+        status, msg, was_redownloaded, should_stop = download_video(
             video, output_dir, existing_files,
             audio_format=audio_format,
             embed_thumbnail=embed_thumbnail,
@@ -342,6 +425,7 @@ def download_videos(
             misnamed=misnamed,
             cookies_from_browser=cookies_from_browser,
             cookies_file=cookies_file,
+            fallback_handler=fallback_handler,
         )
         if status == "ok":
             if was_redownloaded:
@@ -353,9 +437,16 @@ def download_videos(
                 renamed += 1
             else:
                 skipped += 1
+        elif status == "stop":
+            skipped += 1
+            print(f"[{i}/{len(videos)}] {msg}")
+            break
         else:
             fail += 1
             errors.append(msg)
+            print(f"[{i}/{len(videos)}] {msg}")
+            continue
+
         print(f"[{i}/{len(videos)}] {msg}")
 
     return downloaded, renamed, redownloaded, skipped, fail, errors
