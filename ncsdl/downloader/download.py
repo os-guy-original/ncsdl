@@ -332,7 +332,7 @@ def download_video(
         if mode == "always":
             used_fallback = True
         elif mode == "ask" and fallback_handler:
-            choice = fallback_handler()  # Returns "always", "now", or "stop"
+            choice = fallback_handler(safe_name, video.title)  # (filename, youtube_title)
             if choice == "stop":
                 return "stop", f"stop (format unavailable): {safe_name}", False, True
             if choice == "always":
@@ -344,7 +344,9 @@ def download_video(
         if used_fallback:
             # Fallback: let yt-dlp pick best available audio and convert
             fallback_cmd = base_cmd.copy()
-            fallback_cmd.insert(2, "bestaudio/ba")
+            # Insert -f bestaudio/ba BEFORE -x
+            idx = fallback_cmd.index("-x")
+            fallback_cmd[idx:idx] = ["-f", "bestaudio/ba"]
             success, err = _try_download(fallback_cmd, expected_path)
 
     last_error = err
@@ -359,7 +361,8 @@ def download_video(
         # Try again (for network errors, not format issues)
         if used_fallback:
             fallback_cmd = base_cmd.copy()
-            fallback_cmd.insert(2, "bestaudio/ba")
+            idx = fallback_cmd.index("-x")
+            fallback_cmd[idx:idx] = ["-f", "bestaudio/ba"]
             success, last_error = _try_download(fallback_cmd, expected_path)
         else:
             success, last_error = _try_download(base_cmd, expected_path)

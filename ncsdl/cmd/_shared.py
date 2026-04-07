@@ -18,15 +18,20 @@ from ..downloader import (
 _fallback_mode: str = "ask"
 
 
-def _ask_fallback(audio_format: str) -> str:
+def _ask_fallback(video_title: str, audio_format: str) -> str:
     """Ask user what to do when the requested format is unavailable.
 
     Returns "always", "now", or "stop".
     """
     global _fallback_mode
 
+    # Truncate long titles for display
+    short_title = video_title
+    if len(short_title) > 70:
+        short_title = short_title[:67] + "..."
+
     print()
-    print(f"format '{audio_format}' not available for this video.")
+    print(f"format '{audio_format}' not available: {short_title}")
     print("  [a] always  - accept alternative format for all remaining videos")
     print("  [n] now     - accept alternative format for this video only")
     print("  [s] stop    - stop downloading")
@@ -112,8 +117,8 @@ def _download_and_report(
     # Fallback handler: returns ("always"|"now"|"stop")
     fallback_handler = None
     if not download_unwanted_formats:
-        def fallback_handler() -> str:
-            return _ask_fallback(audio_format)
+        def fallback_handler(safe_name: str, video_title: str) -> str:
+            return _ask_fallback(video_title, audio_format)
 
     downloaded, renamed, redownloaded, skipped, fail, errors = download_videos(
         videos,

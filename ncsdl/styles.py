@@ -174,6 +174,14 @@ RE_OLD = re.compile(
     re.IGNORECASE,
 )
 
+# Collab format: "Artist - Song NCS - Copyright Free Music" (no genre pipes)
+RE_COLLAB = re.compile(
+    r"^(?P<artist>.+?)\s+-\s+"
+    r"(?P<title>.+?)"
+    r"\s+NCS\s*-\s*Copyright\s+Free\s+Music\s*$",
+    re.IGNORECASE,
+)
+
 # Bare format: "Artist - Song"
 RE_BARE = re.compile(
     r"^(?P<artist>.+?)\s+-\s+(?P<title>.+?)\s*$"
@@ -181,6 +189,7 @@ RE_BARE = re.compile(
 
 _TITLE_PATTERNS: list[tuple[re.Pattern, str]] = [
     (RE_MODERN, "modern"),
+    (RE_COLLAB, "collab"),
     (RE_OLD, "old"),
     (RE_BARE, "bare"),
 ]

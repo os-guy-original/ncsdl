@@ -155,8 +155,9 @@ python -m ncsdl check-dupes ~/music/ncs --verbose
 | Command | Description |
 |---|---|
 | `analyze` | Analyze NCS title styles and genre distribution |
+| `detect-genres` | Detect genres from NCS YouTube channel |
 | `search` | Search for specific NCS songs by pattern |
-| `list-genres` | List all 66 supported NCS genres |
+| `list-genres` | List all supported NCS genres |
 | `stats` | Show download statistics for a directory |
 | `download` (`dl`) | Download NCS songs |
 | `resume` | Resume an interrupted download |
@@ -165,13 +166,31 @@ python -m ncsdl check-dupes ~/music/ncs --verbose
 
 ## Title Styles Detected
 
-The tool recognizes three main title formats:
+The tool recognizes four title formats across 1714+ individual songs (5 non-song
+entries like compilations, behind the scenes, and anniversary videos are filtered out):
 
-| Style | Example | Era |
-|---|---|---|
-| modern | `Lost Sky - Lost pt. II \| Trap \| NCS - Copyright Free Music` | Oct 2023+ |
-| old | `Elektronomia - Sky high [NCS Release]` | Pre-Oct 2023 |
-| bare | `Cartoon - On & On` | Early uploads |
+| Style | Count | Regex Pattern | Example |
+|---|---|---|---|
+| modern | ~1513 | `Artist - Song \| Genre \| NCS [x Partner] - Copyright Free Music` | `Janji - Heroes Tonight (feat. Johnning) \| Progressive House \| NCS - Copyright Free Music` |
+| collab | ~49 | `Artist - Song NCS - Copyright Free Music` (no genre pipes) | `Almost Weekend & Max Vermeulen - Island (ft. Michael Shynes) NCS - Copyright Free Music` |
+| old | ~93 | `Artist - Song [NCS Release]` | `Elektronomia - Sky high [NCS Release]` |
+| bare | ~59 | `Artist - Song` | `Cartoon - On & On` |
+
+### Format Notes
+
+- **modern**: Includes `x Partner` suffix (e.g. `NCS x Launch13`). Genre is extracted from the pipe-separated field.
+- **collab**: No genre separator pipes — just the NCS suffix at the end.
+- **old**: Pre-October 2023 uploads with `[NCS Release]` tag.
+- **bare**: Early uploads with no NCS branding in the title.
+
+### Non-Song Content (Filtered)
+
+5 videos don't match any pattern and are excluded by the compilation filter:
+- `NCS: The Best of 2023 Mashup`
+- `NCS: The Best of 2022 Mashup`
+- `10 Years Of NCS`
+- `NCS Reloaded: Behind The Scenes`
+- `THANK YOU! ♥️`
 
 ## Supported Genres
 

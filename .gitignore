@@ -35,11 +35,11 @@ ENV/
 .DS_Store
 Thumbs.db
 
-# Downloads (user-defined path, but ignore default test dir)
+# Downloads
 downloads/
 test_downloads/
 
-# Logs
-*.log
-.qwen/
-ncsdl/genres.json
+# Generated data
+ncs_titles.json
+generated_names.json
+genres.json
