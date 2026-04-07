@@ -182,13 +182,12 @@ RE_COLLAB = re.compile(
     re.IGNORECASE,
 )
 
-# Bare format: "Artist - Song" (no NCS branding)
-# Must not contain pipe or NCS anywhere — that means it should've been caught
-# by RE_MODERN or RE_COLLAB. If not, it's a compilation that should be filtered.
+# Bare format: "Artist - Song" or "Artist - Song NCS - Copyright Free Music"
+# The suffix is optional and gets stripped from the title group
 RE_BARE = re.compile(
-    r"^(?P<artist>[^-|]+?)\s+-\s+"
-    r"(?P<title>[^|]+?)"
-    r"\s*$"
+    r"^(?P<artist>[^-]+?)\s+-\s+"
+    r"(?P<title>.+?)"
+    r"(?:\s+NCS\s*-\s*Copyright\s+Free\s+Music)?\s*$"
 )
 
 _TITLE_PATTERNS: list[tuple[re.Pattern, str]] = [
@@ -257,6 +256,11 @@ def parse_title(title: str) -> Optional[ParsedTitle]:
         if match:
             artist = match.group("artist").strip()
             song = match.group("title").strip()
+
+            # Reject if artist looks like a mix/compilation title
+            artist_lower = artist.lower()
+            if any(w in artist_lower for w in ("ncs", " mix", "mashup", "album")):
+                continue
 
             genre = None
             if "genre" in match.groupdict():
