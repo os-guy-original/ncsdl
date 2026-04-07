@@ -318,6 +318,8 @@ def download_video(
     if cookies_file:
         base_cmd.extend(["--cookies", cookies_file])
 
+    base_cmd.append("--no-resume")
+
     # Strategy 1: Try exact format first
     exact_cmd = base_cmd.copy()
     exact_cmd.insert(2, f"ba[ext={audio_format}]")
