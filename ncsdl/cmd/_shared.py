@@ -38,11 +38,17 @@ def _download_and_report(
     audio_format: str,
     embed_thumbnail: bool,
     max_retries: int,
+    cookies_from_browser: str | None = None,
+    cookies_file: str | None = None,
 ) -> int:
     """Run download and print summary. Returns exit code."""
     print()
     print(f"format: {audio_format}  |  thumbnails: {'yes' if embed_thumbnail else 'no'}")
     print(f"output: {output_dir}")
+    if cookies_from_browser:
+        print(f"cookies: from {cookies_from_browser} browser")
+    if cookies_file:
+        print(f"cookies: from {cookies_file}")
     print("-" * 40)
 
     downloaded, renamed, redownloaded, skipped, fail, errors = download_videos(
@@ -52,6 +58,8 @@ def _download_and_report(
         audio_format=audio_format,
         embed_thumbnail=embed_thumbnail,
         max_retries=max_retries,
+        cookies_from_browser=cookies_from_browser,
+        cookies_file=cookies_file,
     )
 
     print()

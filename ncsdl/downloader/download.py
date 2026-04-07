@@ -205,6 +205,8 @@ def download_video(
     max_retries: int = 2,
     track_data: dict | None = None,
     misnamed: dict | None = None,
+    cookies_from_browser: str | None = None,
+    cookies_file: str | None = None,
 ) -> tuple[str, str, bool]:
     """Download a single video as an audio file.
 
@@ -258,6 +260,11 @@ def download_video(
     if embed_thumbnail:
         cmd.append("--embed-thumbnail")
 
+    if cookies_from_browser:
+        cmd.extend(["--cookies-from-browser", cookies_from_browser])
+    if cookies_file:
+        cmd.extend(["--cookies", cookies_file])
+
     last_error = ""
     for attempt in range(1, max_retries + 2):
         try:
@@ -300,6 +307,8 @@ def download_videos(
     audio_format: str = "m4a",
     embed_thumbnail: bool = True,
     max_retries: int = 2,
+    cookies_from_browser: str | None = None,
+    cookies_file: str | None = None,
 ) -> tuple[int, int, int, int, int, list[str]]:
     """Download multiple videos.
 
@@ -331,6 +340,8 @@ def download_videos(
             max_retries=max_retries,
             track_data=track_data,
             misnamed=misnamed,
+            cookies_from_browser=cookies_from_browser,
+            cookies_file=cookies_file,
         )
         if status == "ok":
             if was_redownloaded:

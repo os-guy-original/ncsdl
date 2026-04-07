@@ -66,6 +66,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-check-dupes", action="store_true", help="Skip duplicate checking")
     p.add_argument("--retries", "-r", type=int, default=2, help="Retry attempts per failed download (default: 2)")
     p.add_argument("--include-mixes", "-m", action="store_true", help="Include mixes and compilations")
+    p.add_argument("--cookies-from-browser", metavar="BROWSER", help="Browser to extract cookies from (e.g. firefox, chrome)")
+    p.add_argument("--cookies-file", metavar="FILE", help="Path to a netscape cookies file")
 
     # resume
     p = subparsers.add_parser("resume", help="Resume an interrupted download")
@@ -74,6 +76,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-thumbnail", action="store_true", help="Do not embed album thumbnail")
     p.add_argument("--retries", "-r", type=int, default=2, help="Retry attempts per failed download (default: 2)")
     p.add_argument("--include-mixes", "-m", action="store_true", help="Include mixes and compilations")
+    p.add_argument("--cookies-from-browser", metavar="BROWSER", help="Browser to extract cookies from (e.g. firefox, chrome)")
+    p.add_argument("--cookies-file", metavar="FILE", help="Path to a netscape cookies file")
 
     # metadata
     p = subparsers.add_parser("metadata", aliases=["meta"], help="Embed metadata into audio files")

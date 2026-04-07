@@ -44,4 +44,6 @@ def run(args) -> int:
     return _download_and_report(
         videos, output_dir, existing,
         audio_format, embed_thumbnail, args.retries,
+        cookies_from_browser=args.cookies_from_browser,
+        cookies_file=args.cookies_file,
     )
