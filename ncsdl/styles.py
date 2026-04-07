@@ -190,8 +190,20 @@ RE_BARE = re.compile(
     r"(?:\s+NCS\s*-\s*Copyright\s+Free\s+Music)?\s*$"
 )
 
+# Mashup format: "Song A x Song B Mashup NCS - Copyright Free Music"
+# or "Song A x Song B Mashup | NCS - Copyright Free Music"
+RE_MASHUP = re.compile(
+    r"^(?P<artist>.+?)\s+x\s+"
+    r"(?P<title>.+?)"
+    r"\s+Mashup"
+    r"(?:\s*\|[^|]*)?"
+    r"(?:\s+NCS\s*-\s*Copyright\s+Free\s+Music)?\s*$",
+    re.IGNORECASE,
+)
+
 _TITLE_PATTERNS: list[tuple[re.Pattern, str]] = [
     (RE_MODERN, "modern"),
+    (RE_MASHUP, "mashup"),
     (RE_COLLAB, "collab"),
     (RE_OLD, "old"),
     (RE_BARE, "bare"),
@@ -201,6 +213,7 @@ _SUFFIX_PATTERNS = [
     re.compile(r"\s*\(VIP\)\s*$", re.IGNORECASE),
     re.compile(r"\s*VIP\s*$", re.IGNORECASE),
     re.compile(r"\s*\(Remix\)\s*$", re.IGNORECASE),
+    re.compile(r"\s*Mashup\s*$", re.IGNORECASE),
     re.compile(r"\s*\(Sped Up\)\s*$", re.IGNORECASE),
     re.compile(r"\s*\(\d{4}\s+Edit\)\s*$", re.IGNORECASE),
     re.compile(r"\s*\(Hindi\)\s*$", re.IGNORECASE),

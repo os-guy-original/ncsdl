@@ -24,7 +24,6 @@ _COMPILATION_PATTERNS = frozenset({
     "most viewed",
     "all time",
     "popular songs by",
-    "mashup",
     "behind the scenes",
     "10 years",
     "thank you",
@@ -56,6 +55,10 @@ _COMPILATION_PATTERNS = frozenset({
     " : colors ",
     "is love, ncs is life",
     "halloween songs mix",
+    "ncs mashup",
+    "ncs 202",
+    "biggest ncs",
+    "biggest nocopyrightsounds",
 })
 
 
