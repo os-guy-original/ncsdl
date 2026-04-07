@@ -340,7 +340,8 @@ def download_video(
 
     # Strategy 1: Try exact format first
     exact_cmd = base_cmd.copy()
-    exact_cmd.insert(2, f"ba[ext={audio_format}]")
+    exact_cmd.insert(2, "-f")
+    exact_cmd.insert(3, f"ba[ext={audio_format}]")
 
     success, err = _try_with_cleanup(exact_cmd, expected_path)
     used_fallback = False
@@ -364,7 +365,6 @@ def download_video(
         if used_fallback:
             # Fallback: let yt-dlp pick best available audio and convert
             fallback_cmd = base_cmd.copy()
-            # Insert -f bestaudio/ba BEFORE -x
             idx = fallback_cmd.index("-x")
             fallback_cmd[idx:idx] = ["-f", "bestaudio/ba"]
             success, err = _try_with_cleanup(fallback_cmd, expected_path)
@@ -385,7 +385,10 @@ def download_video(
             fallback_cmd[idx:idx] = ["-f", "bestaudio/ba"]
             success, last_error = _try_with_cleanup(fallback_cmd, expected_path)
         else:
-            success, last_error = _try_with_cleanup(base_cmd, expected_path)
+            exact_cmd = base_cmd.copy()
+            exact_cmd.insert(2, "-f")
+            exact_cmd.insert(3, f"ba[ext={audio_format}]")
+            success, last_error = _try_with_cleanup(exact_cmd, expected_path)
 
     if success and os.path.exists(expected_path):
         if not is_audio_valid(expected_path):
