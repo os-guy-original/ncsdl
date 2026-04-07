@@ -318,13 +318,31 @@ def download_video(
     if cookies_file:
         base_cmd.extend(["--cookies", cookies_file])
 
-    base_cmd.append("--no-resume")
+    base_cmd.append("--no-continue")
+
+    def _clean_partial_files(path: str) -> None:
+        """Remove partial/temp download files that cause HTTP 416 errors."""
+        for suffix in (".part", ".tmp", ".ytdl", ".webm", ".m4a", ".mp3", ".opus", ".flac"):
+            p = path + suffix
+            if os.path.exists(p):
+                try:
+                    os.remove(p)
+                except OSError:
+                    pass
+
+    def _try_with_cleanup(cmd: list[str], path: str, timeout: int = 300) -> tuple[bool, str]:
+        """Try download, and if it fails with range error, clean and retry once."""
+        success, err = _try_download(cmd, path, timeout)
+        if not success and ("416" in err or "range" in err.lower()):
+            _clean_partial_files(path)
+            success, err = _try_download(cmd, path, timeout)
+        return success, err
 
     # Strategy 1: Try exact format first
     exact_cmd = base_cmd.copy()
     exact_cmd.insert(2, f"ba[ext={audio_format}]")
 
-    success, err = _try_download(exact_cmd, expected_path)
+    success, err = _try_with_cleanup(exact_cmd, expected_path)
     used_fallback = False
 
     if not success and _format_unavailable_error(err):
@@ -349,7 +367,7 @@ def download_video(
             # Insert -f bestaudio/ba BEFORE -x
             idx = fallback_cmd.index("-x")
             fallback_cmd[idx:idx] = ["-f", "bestaudio/ba"]
-            success, err = _try_download(fallback_cmd, expected_path)
+            success, err = _try_with_cleanup(fallback_cmd, expected_path)
 
     last_error = err
     for attempt in range(1, max_retries + 2):
@@ -360,14 +378,14 @@ def download_video(
             last_error = "timeout"
             continue
 
-        # Try again (for network errors, not format issues)
+        # Retry with cleanup for HTTP 416 errors
         if used_fallback:
             fallback_cmd = base_cmd.copy()
             idx = fallback_cmd.index("-x")
             fallback_cmd[idx:idx] = ["-f", "bestaudio/ba"]
-            success, last_error = _try_download(fallback_cmd, expected_path)
+            success, last_error = _try_with_cleanup(fallback_cmd, expected_path)
         else:
-            success, last_error = _try_download(base_cmd, expected_path)
+            success, last_error = _try_with_cleanup(base_cmd, expected_path)
 
     if success and os.path.exists(expected_path):
         if not is_audio_valid(expected_path):
