@@ -177,14 +177,18 @@ RE_OLD = re.compile(
 # Collab format: "Artist - Song NCS - Copyright Free Music" (no genre pipes)
 RE_COLLAB = re.compile(
     r"^(?P<artist>.+?)\s+-\s+"
-    r"(?P<title>.+?)"
+    r"(?P<title>[^|]+?)"
     r"\s+NCS\s*-\s*Copyright\s+Free\s+Music\s*$",
     re.IGNORECASE,
 )
 
-# Bare format: "Artist - Song"
+# Bare format: "Artist - Song" (no NCS branding)
+# Must not contain pipe or NCS anywhere — that means it should've been caught
+# by RE_MODERN or RE_COLLAB. If not, it's a compilation that should be filtered.
 RE_BARE = re.compile(
-    r"^(?P<artist>.+?)\s+-\s+(?P<title>.+?)\s*$"
+    r"^(?P<artist>[^-|]+?)\s+-\s+"
+    r"(?P<title>[^|]+?)"
+    r"\s*$"
 )
 
 _TITLE_PATTERNS: list[tuple[re.Pattern, str]] = [
