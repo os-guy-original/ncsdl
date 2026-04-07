@@ -156,11 +156,12 @@ def normalize_genre(raw: str) -> Optional[str]:
 
 # Modern format: "Artist - Song | Genre | NCS - Copyright Free Music"
 # Also: "Artist - Song | Genre | NCS x Partner - Copyright Free Music"
+# Also: en-dash (–), NCS13, NCS10 suffixes
 RE_MODERN = re.compile(
-    r"^(?P<artist>.+?)\s+-\s+"
+    r"^(?P<artist>.+?)\s+[\-–]\s+"
     r"(?P<title>.+?)"
     r"\s*\|\s*(?P<genre>[^|]+?)"
-    r"\s*\|\s*NCS"
+    r"\s*\|\s*NCS\d*\b"
     r"(?:\s*x\s*[^|]+?)?"
     r"(?:\s*-\s*Copyright\s+Free\s+Music)?\s*$",
     re.IGNORECASE,
@@ -168,17 +169,21 @@ RE_MODERN = re.compile(
 
 # Old format: "Artist - Song [NCS Release]"
 RE_OLD = re.compile(
-    r"^(?P<artist>.+?)\s+-\s+"
+    r"^(?P<artist>.+?)\s+[\-–]\s+"
     r"(?P<title>.+?)"
     r"\s*\[NCS\s+Release\]\s*$",
     re.IGNORECASE,
 )
 
 # Collab format: "Artist - Song NCS - Copyright Free Music" (no genre pipes)
+# Also: "Artist - Song Genre NCS13 - Copyright Free Music" (inline genre)
+# Also accepts en-dash (\u2013), NCS10/NCS13 suffixes
+# Genre is extracted from end of title in _finalize_title()
 RE_COLLAB = re.compile(
-    r"^(?P<artist>.+?)\s+-\s+"
-    r"(?P<title>[^|]+?)"
-    r"\s+NCS\s*-\s*Copyright\s+Free\s+Music\s*$",
+    r"^(?P<artist>.+?)\s+[\u002d\u2013]\s+"
+    r"(?P<title>.+?)"
+    r"\s+NCS\d*\b"
+    r"(?:\s*-\s*Copyright\s+Free\s+Music)?\s*$",
     re.IGNORECASE,
 )
 
@@ -241,6 +246,26 @@ def _extract_suffix(title: str) -> tuple[str, Optional[str]]:
     return title, None
 
 
+def _extract_genre_from_title(title: str) -> tuple[str, Optional[str]]:
+    """Try to extract a known genre from the end of a title string."""
+    if not title:
+        return title, None
+    parts = title.split()
+    if len(parts) < 2:
+        return title, None
+    get_genres()  # ensure lookup is loaded
+    # Check last two words first (matches multi-word genres like "Melodic Dubstep")
+    if len(parts) >= 3:
+        last2 = " ".join(parts[-2:]).lower()
+        if last2 in _genre_lookup:
+            return " ".join(parts[:-2]).strip(), _genre_lookup[last2]
+    # Check last word
+    last = parts[-1].lower()
+    if last in _genre_lookup:
+        return " ".join(parts[:-1]).strip(), _genre_lookup[last]
+    return title, None
+
+
 def _finalize_title(
     artist: str,
     song: str,
@@ -248,6 +273,12 @@ def _finalize_title(
     style: str,
 ) -> ParsedTitle:
     """Run shared post-processing and return ParsedTitle."""
+    # For collab style, try to extract genre from end of title
+    if style == "collab" and genre is None:
+        song, inline_genre = _extract_genre_from_title(song)
+        if inline_genre:
+            genre = inline_genre
+
     song, featuring = _extract_featuring(song)
     song, suffix = _extract_suffix(song)
     return ParsedTitle(
