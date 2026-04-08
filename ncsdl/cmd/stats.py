@@ -36,7 +36,7 @@ def run(args) -> int:
     print(f"{'Total files':<20} {len(files):>15}")
     print(f"{'Total size':<20} {total_size / 1024 / 1024:>14.1f} MB")
     print(f"{'Avg file size':<20} {total_size / len(files) / 1024:>14.1f} KB")
-    print(f"{'Genres detected':<20} {sum(genres_detected.values()):>15}")
+    print(f"{'Genres detected':<20} {len(genres_detected):>15}")
 
     if genres_detected:
         print()
