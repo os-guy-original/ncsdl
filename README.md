@@ -167,35 +167,25 @@ python -m ncsdl check-dupes ~/music/ncs --verbose
 
 ## Title Styles Detected
 
-The tool recognizes four title formats across 1714+ individual songs (5 non-song
-entries like compilations, behind the scenes, and anniversary videos are filtered out):
+The tool recognizes five title formats used across the NCS YouTube channel:
 
-| Style | Count | Regex Pattern | Example |
-|---|---|---|---|
-| modern | ~1513 | `Artist - Song \| Genre \| NCS [x Partner] - Copyright Free Music` | `Janji - Heroes Tonight (feat. Johnning) \| Progressive House \| NCS - Copyright Free Music` |
-| collab | ~49 | `Artist - Song NCS - Copyright Free Music` (no genre pipes) | `Almost Weekend & Max Vermeulen - Island (ft. Michael Shynes) NCS - Copyright Free Music` |
-| old | ~93 | `Artist - Song [NCS Release]` | `Elektronomia - Sky high [NCS Release]` |
-| bare | ~59 | `Artist - Song` | `Cartoon - On & On` |
+| Style | Pattern | Example |
+|---|---|---|
+| modern | `Artist - Song \| Genre \| NCS [x Partner] - Copyright Free Music` | `Janji - Heroes Tonight (feat. Johnning) \| Progressive House \| NCS - Copyright Free Music` |
+| mashup | `Song A x Song B Mashup [NCS - Copyright Free Music]` | `Razihel x Tria x Kisma - Touch Me Mashup NCS - Copyright Free Music` |
+| collab | `Artist - Song [Genre] NCS - Copyright Free Music` | `Almost Weekend & Max Vermeulen - Island (ft. Michael Shynes) NCS - Copyright Free Music` |
+| old | `Artist - Song [NCS Release]` | `Elektronomia - Sky High [NCS Release]` |
+| bare | `Artist - Song` | `Cartoon - On & On` |
 
 ### Format Notes
 
-- **modern**: Includes `x Partner` suffix (e.g. `NCS x Launch13`). Genre is extracted from the pipe-separated field.
-- **collab**: No genre separator pipes — just the NCS suffix at the end.
-- **old**: Pre-October 2023 uploads with `[NCS Release]` tag.
-- **bare**: Early uploads with no NCS branding in the title.
+- **modern**: Pipe-separated format with genre field. The `NCS` suffix may include digits (e.g. `NCS10`, `NCS13`) and an optional partner name (e.g. `NCS x Launch13`). Genre is extracted from the pipe-separated field.
+- **mashup**: Detected by `x` separator and `Mashup` keyword in the title. Both artists are combined into the artist tag.
+- **collab**: No genre separator pipes — just the NCS suffix at the end. Genre is heuristically extracted from the end of the title when it matches a known genre name (e.g. `Trap`, `Melodic Dubstep`).
+- **old**: Pre-October 2023 uploads with `[NCS Release]` tag. No genre information is available in the title.
+- **bare**: Early uploads with no NCS branding. No genre information is available.
 
-### Non-Song Content (Filtered)
-
-5 videos don't match any pattern and are excluded by the compilation filter:
-- `NCS: The Best of 2023 Mashup`
-- `NCS: The Best of 2022 Mashup`
-- `10 Years Of NCS`
-- `NCS Reloaded: Behind The Scenes`
-- `THANK YOU! ♥️`
-
-## Supported Genres
-
-66 genres including: Trap, House, Dubstep, Drum & Bass, Future Bass, Electro, Progressive House, Chill, Lofi Hip-Hop, Pop, Techno, Trance, Wave, Phonk, and more.
+Suffixes like `(VIP)`, `(Remix)`, `(Sped Up)`, `(Hindi)`, `(YYYY Edit)`, and `pt. II` are automatically detected and preserved in the song title. Featuring artists in parentheses (e.g. `(feat. Johnning)`) are extracted into a separate tag field.
 
 ## License
 
