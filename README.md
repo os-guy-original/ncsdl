@@ -9,7 +9,8 @@ Download NoCopyrightSounds music from YouTube with automatic title style detecti
   - Old (Pre-Oct 2023): `Artist - Song [NCS Release]`
   - Legacy: `Artist - Song`
 - **Genre Classification**: Supports 60+ NCS genres including Trap, House, Dubstep, Drum & Bass, Future Bass, and more
-- **Modern Audio Formats**: M4A (default), FLAC, Opus, or MP3
+- **M4A Audio Format**: Downloads best available audio and converts to M4A with AAC codec
+- **Cookie Authentication**: Download age-restricted or private-listed videos using browser cookies
 - **Thumbnail Embedding**: Album art from YouTube is embedded as cover art
 - **Metadata Tags**: Artist, title, genre, album tags embedded during download
 - **Duplicate Checking**: Automatically skips already downloaded songs
@@ -24,6 +25,7 @@ Download NoCopyrightSounds music from YouTube with automatic title style detecti
 ### Prerequisites
 
 - Python 3.9+
+- Node.js (required by yt-dlp for YouTube signature decryption)
 - ffmpeg (for audio conversion)
 
 ### Install
@@ -31,6 +33,11 @@ Download NoCopyrightSounds music from YouTube with automatic title style detecti
 ```bash
 # Install Python dependencies
 pip install yt-dlp mutagen
+
+# Install Node.js (required for yt-dlp YouTube challenge solving)
+sudo apt install nodejs    # Ubuntu/Debian
+sudo dnf install nodejs    # Fedora
+brew install node          # macOS
 
 # Install ffmpeg (Ubuntu/Debian)
 sudo apt install ffmpeg
@@ -88,14 +95,17 @@ Download by genre, or the entire library:
 # Download Trap songs (M4A with thumbnails, default)
 python -m ncsdl download --genre Trap
 
-# Download entire library in FLAC
-python -m ncsdl download --genre all --format flac
+# Download entire NCS library
+python -m ncsdl download --genre all
 
-# Download to specific directory in Opus
-python -m ncsdl download --genre House --output ~/music/ncs --format opus
+# Download to specific directory
+python -m ncsdl download --genre House --output ~/music/ncs
 
-# Download as MP3 without thumbnails
-python -m ncsdl download --genre Dubstep --format mp3 --no-thumbnail
+# Download without thumbnails
+python -m ncsdl download --genre Dubstep --no-thumbnail
+
+# Download with browser cookies (for age-restricted videos)
+python -m ncsdl download --genre all --cookies-from-browser firefox
 
 # List found videos without downloading
 python -m ncsdl download --genre Trap --list-only
@@ -110,17 +120,8 @@ If a download was interrupted, resume where you left off:
 
 ```bash
 python -m ncsdl resume
-python -m ncsdl resume --output ~/music/ncs --format flac
+python -m ncsdl resume --output ~/music/ncs
 ```
-
-### Supported Audio Formats
-
-| Format | Extension | Codec | Quality | Use Case |
-|---|---|---|---|---|
-| m4a (default) | .m4a | AAC | Lossy | Best balance of quality and size |
-| flac | .flac | FLAC | Lossless | Archival, audiophile |
-| opus | .opus | Opus | Lossy | Best compression, modern players |
-| mp3 | .mp3 | MP3 | Lossy | Maximum compatibility |
 
 ### View Download Statistics
 
