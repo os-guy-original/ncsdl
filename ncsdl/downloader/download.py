@@ -115,7 +115,7 @@ def _scan_for_misnamed(
 ) -> dict[str, str]:
     """Scan directory for audio files and read their ncsdl_id tags.
 
-    Returns {video_id: filepath} for files whose expected name doesn't match.
+    Returns {video_id: filepath} for files whose expected name didn't match.
     Excludes the correctly-named file for the current video.
     """
     dir_path = Path(output_dir)
@@ -202,24 +202,42 @@ def _check_by_id(
     return False, ""
 
 
-# Global fallback mode: "ask" | "always" | "stop"
-_fallback_mode: str = "ask"
+def _find_downloaded_file(safe_name: str, output_dir: str, target_ext: str) -> str | None:
+    """Find a downloaded audio file matching safe_name with any extension.
+
+    Checks target_ext first, then other audio extensions.
+    Returns the path if found and valid, None otherwise.
+    """
+    target_path = os.path.join(output_dir, f"{safe_name}.{target_ext}")
+    if os.path.exists(target_path) and is_audio_valid(target_path):
+        return target_path
+
+    for alt_ext in ("webm", "m4a", "mp3", "opus", "flac", "ogg"):
+        if alt_ext == target_ext:
+            continue
+        alt_path = os.path.join(output_dir, f"{safe_name}.{alt_ext}")
+        if os.path.exists(alt_path) and is_audio_valid(alt_path):
+            return alt_path
+
+    return None
 
 
-def set_fallback_mode(value: str) -> None:
-    """Set fallback mode: 'ask', 'always', or 'stop'."""
-    global _fallback_mode
-    _fallback_mode = value
-
-
-def get_fallback_mode() -> str:
-    """Get current fallback mode."""
-    return _fallback_mode
-
-
-def _format_unavailable_error(stderr: str) -> bool:
-    """Check if stderr indicates format not available."""
-    return "Requested format is not available" in stderr
+def _convert_audio(input_path: str, output_path: str) -> bool:
+    """Convert an audio file to a different format using ffmpeg."""
+    try:
+        result = subprocess.run(
+            ["ffmpeg", "-y", "-i", input_path, "-vn", output_path],
+            capture_output=True,
+            text=True,
+            timeout=120,
+            stdin=subprocess.DEVNULL,
+        )
+        if result.returncode == 0 and os.path.exists(output_path):
+            os.remove(input_path)
+            return True
+    except (subprocess.TimeoutExpired, OSError):
+        pass
+    return False
 
 
 def _try_download(
@@ -256,12 +274,8 @@ def download_video(
     misnamed: dict | None = None,
     cookies_from_browser: str | None = None,
     cookies_file: str | None = None,
-    fallback_handler: callable | None = None,
 ) -> tuple[str, str, bool, bool]:
     """Download a single video as an audio file.
-
-    Tries the requested format first. If unavailable, uses fallback_handler
-    to decide whether to accept an alternative format.
 
     Returns (status, message, was_redownloaded, should_stop).
     """
@@ -297,6 +311,8 @@ def download_video(
     # Build base command parts
     base_cmd = [
         "yt-dlp",
+        "--js-runtimes", "node",
+        "--remote-components", "ejs:github",
         video.url,
         "-x",
         "--audio-format",
@@ -321,10 +337,11 @@ def download_video(
     base_cmd.append("--no-continue")
 
     def _clean_partial_files(path: str) -> None:
-        """Remove partial/temp download files that cause HTTP 416 errors."""
-        for suffix in (".part", ".tmp", ".ytdl", ".webm", ".m4a", ".mp3", ".opus", ".flac"):
-            p = path + suffix
-            if os.path.exists(p):
+        """Remove partial/temp download files that may interfere."""
+        base = os.path.splitext(path)[0]
+        for suffix in (".part", ".tmp", ".ytdl", ".webm", ".m4a", ".mp3", ".opus", ".flac", ".ogg"):
+            p = base + suffix
+            if os.path.exists(p) and p != path:
                 try:
                     os.remove(p)
                 except OSError:
@@ -338,71 +355,99 @@ def download_video(
             success, err = _try_download(cmd, path, timeout)
         return success, err
 
-    # Strategy 1: Try exact format first
-    exact_cmd = base_cmd.copy()
-    exact_cmd.insert(2, "-f")
-    exact_cmd.insert(3, f"ba[ext={audio_format}]")
+    # --- Download ---
 
-    success, err = _try_with_cleanup(exact_cmd, expected_path)
-    used_fallback = False
+    # Strategy 1: Auto-select best format, convert to m4a via --audio-format
+    auto_cmd = base_cmd.copy()
+    success, err = _try_with_cleanup(auto_cmd, expected_path)
 
-    if not success and _format_unavailable_error(err):
-        # Format not available - check fallback mode
-        mode = get_fallback_mode()
+    # Strategy 2 (nuclear): Download raw audio in any format, convert manually
+    if not success:
+        _clean_partial_files(expected_path)
+        raw_cmd = base_cmd.copy()
+        # Replace --audio-format <format> with --audio-format best
+        af_idx = raw_cmd.index("--audio-format")
+        raw_cmd[af_idx + 1] = "best"
+        # Remove --audio-quality (not applicable with --audio-format best)
+        aq_idx = raw_cmd.index("--audio-quality")
+        del raw_cmd[aq_idx:aq_idx + 2]
 
-        if mode == "always":
-            used_fallback = True
-        elif mode == "ask" and fallback_handler:
-            choice = fallback_handler(safe_name, video.title)  # (filename, youtube_title)
-            if choice == "stop":
-                return "stop", f"stop (format unavailable): {safe_name}", False, True
-            if choice == "always":
-                set_fallback_mode("always")
-                used_fallback = True
-            elif choice == "now":
-                used_fallback = True
+        try:
+            result = subprocess.run(
+                raw_cmd,
+                capture_output=True,
+                text=True,
+                timeout=300,
+                stdin=subprocess.DEVNULL,
+            )
+        except subprocess.TimeoutExpired:
+            result = None
+            err = "timeout"
 
-        if used_fallback:
-            # Fallback: let yt-dlp pick best available audio and convert
-            fallback_cmd = base_cmd.copy()
-            idx = fallback_cmd.index("-x")
-            fallback_cmd[idx:idx] = ["-f", "bestaudio/ba"]
-            success, err = _try_with_cleanup(fallback_cmd, expected_path)
+        if result is not None and result.returncode == 0:
+            raw_path = _find_downloaded_file(safe_name, output_dir, ext)
+            if raw_path:
+                raw_ext = os.path.splitext(raw_path)[1].lower()
+                if raw_ext != f".{ext}":
+                    if _convert_audio(raw_path, expected_path):
+                        success = True
+                    else:
+                        for p in (raw_path, expected_path):
+                            if os.path.exists(p):
+                                try:
+                                    os.remove(p)
+                                except OSError:
+                                    pass
+                else:
+                    success = True
+        elif result is not None:
+            err = result.stderr.strip() if result.stderr else "unknown error"
 
+    # Retry loop — only for transient errors (timeouts, network)
     last_error = err
     for attempt in range(1, max_retries + 2):
         if success:
             break
 
+        _clean_partial_files(expected_path)
+
         if "timeout" in last_error:
             last_error = "timeout"
             continue
 
-        # Retry with cleanup for HTTP 416 errors
-        if used_fallback:
-            fallback_cmd = base_cmd.copy()
-            idx = fallback_cmd.index("-x")
-            fallback_cmd[idx:idx] = ["-f", "bestaudio/ba"]
-            success, last_error = _try_with_cleanup(fallback_cmd, expected_path)
-        else:
-            exact_cmd = base_cmd.copy()
-            exact_cmd.insert(2, "-f")
-            exact_cmd.insert(3, f"ba[ext={audio_format}]")
-            success, last_error = _try_with_cleanup(exact_cmd, expected_path)
+        auto_cmd = base_cmd.copy()
+        success, last_error = _try_with_cleanup(auto_cmd, expected_path)
 
-    if success and os.path.exists(expected_path):
-        if not is_audio_valid(expected_path):
-            os.remove(expected_path)
+    # Validate and finalize
+    final_path = _find_downloaded_file(safe_name, output_dir, ext)
+
+    if success and final_path:
+        # Convert if the file is in a different format than requested
+        actual_ext = os.path.splitext(final_path)[1].lower()
+        if actual_ext != f".{ext}":
+            if _convert_audio(final_path, expected_path):
+                final_path = expected_path
+            else:
+                for p in (final_path, expected_path):
+                    if os.path.exists(p):
+                        try:
+                            os.remove(p)
+                        except OSError:
+                            pass
+                return "fail", f"fail: {safe_name} (conversion error)", False, False
+
+        if not is_audio_valid(final_path):
+            os.remove(final_path)
             return "fail", f"fail: {safe_name} (corrupted file)", False, False
 
         if video.parsed:
-            _embed_metadata(expected_path, video.parsed, video.video_id)
+            _embed_metadata(final_path, video.parsed, video.video_id)
 
         if track_data is not None:
             record_download(output_dir, video.video_id, safe_name, video.title)
 
-        if used_fallback or redownloading:
-            return "ok", f"ok*: {safe_name}.{ext}", redownloading, False
+        if redownloading:
+            return "ok", f"ok: {safe_name}.{ext}", True, False
         return "ok", f"ok: {safe_name}.{ext}", False, False
 
     return "fail", f"fail: {safe_name} ({last_error})", False, False
@@ -417,7 +462,6 @@ def download_videos(
     max_retries: int = 2,
     cookies_from_browser: str | None = None,
     cookies_file: str | None = None,
-    fallback_handler: callable | None = None,
 ) -> tuple[int, int, int, int, int, list[str]]:
     """Download multiple videos.
 
@@ -451,7 +495,6 @@ def download_videos(
             misnamed=misnamed,
             cookies_from_browser=cookies_from_browser,
             cookies_file=cookies_file,
-            fallback_handler=fallback_handler,
         )
         if status == "ok":
             if was_redownloaded:
@@ -463,10 +506,6 @@ def download_videos(
                 renamed += 1
             else:
                 skipped += 1
-        elif status == "stop":
-            skipped += 1
-            print(f"[{i}/{len(videos)}] {msg}")
-            break
         else:
             fail += 1
             errors.append(msg)

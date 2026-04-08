@@ -3,8 +3,6 @@
 from .download import (
     download_video,
     download_videos,
-    set_fallback_mode,
-    get_fallback_mode,
 )
 from .files import (
     SUPPORTED_FORMATS,

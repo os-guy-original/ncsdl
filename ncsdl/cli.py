@@ -8,7 +8,7 @@ import os
 import sys
 
 from .cmd import COMMANDS
-from .downloader import SUPPORTED_FORMATS, check_dependencies
+from .downloader import check_dependencies
 
 
 def _add_common_limit(parser: argparse.ArgumentParser) -> None:
@@ -60,7 +60,6 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--genre", "-g", help="Genre to download, or 'all' for entire library")
     p.add_argument("--output", "-o", help="Output directory (default: ~/ncs_downloads)")
     _add_common_limit(p)
-    p.add_argument("--format", "-f", choices=list(SUPPORTED_FORMATS.keys()), default="m4a", help="Audio format (default: m4a)")
     p.add_argument("--no-thumbnail", action="store_true", help="Do not embed album thumbnail")
     p.add_argument("--list-only", action="store_true", help="Only list found videos without downloading")
     p.add_argument("--no-check-dupes", action="store_true", help="Skip duplicate checking")
@@ -68,18 +67,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--include-mixes", "-m", action="store_true", help="Include mixes and compilations")
     p.add_argument("--cookies-from-browser", metavar="BROWSER", help="Browser to extract cookies from (e.g. firefox, chrome)")
     p.add_argument("--cookies-file", metavar="FILE", help="Path to a netscape cookies file")
-    p.add_argument("--download-unwanted-formats", action="store_true", help="Auto-accept alternative format when requested format is unavailable")
 
     # resume
     p = subparsers.add_parser("resume", help="Resume an interrupted download")
     p.add_argument("--output", "-o", help="Output directory (default: ~/ncs_downloads)")
-    p.add_argument("--format", "-f", choices=list(SUPPORTED_FORMATS.keys()), default="m4a", help="Audio format (default: m4a)")
     p.add_argument("--no-thumbnail", action="store_true", help="Do not embed album thumbnail")
     p.add_argument("--retries", "-r", type=int, default=2, help="Retry attempts per failed download (default: 2)")
     p.add_argument("--include-mixes", "-m", action="store_true", help="Include mixes and compilations")
     p.add_argument("--cookies-from-browser", metavar="BROWSER", help="Browser to extract cookies from (e.g. firefox, chrome)")
     p.add_argument("--cookies-file", metavar="FILE", help="Path to a netscape cookies file")
-    p.add_argument("--download-unwanted-formats", action="store_true", help="Auto-accept alternative format when requested format is unavailable")
 
     # metadata
     p = subparsers.add_parser("metadata", aliases=["meta"], help="Embed metadata into audio files")
@@ -101,6 +97,8 @@ def main() -> int:
         if "yt-dlp" in missing:
             print("  pip install yt-dlp", file=sys.stderr)
         if "ffprobe" in missing:
+            print("  sudo apt install ffmpeg  (or equivalent)", file=sys.stderr)
+        if "ffmpeg" in missing:
             print("  sudo apt install ffmpeg  (or equivalent)", file=sys.stderr)
         return 1
 

@@ -65,7 +65,7 @@ _COMPILATION_PATTERNS = frozenset({
 def check_dependencies() -> list[str]:
     """Check if required CLI tools are installed."""
     missing = []
-    for tool in ("yt-dlp", "ffprobe"):
+    for tool in ("yt-dlp", "ffprobe", "ffmpeg"):
         result = subprocess.run(
             ["which", tool],
             capture_output=True,
@@ -203,6 +203,8 @@ def search_ncs_videos(
     if not genre and max_results == 0:
         cmd = [
             "yt-dlp",
+            "--js-runtimes", "node",
+            "--remote-components", "ejs:github",
             NCS_CHANNEL_URL,
             "--flat-playlist",
             "--print",
@@ -217,6 +219,8 @@ def search_ncs_videos(
             query = f"NoCopyrightSounds | {genre} |"
         cmd = [
             "yt-dlp",
+            "--js-runtimes", "node",
+            "--remote-components", "ejs:github",
             f"ytsearch{limit * 3}:{query}",
             "--flat-playlist",
             "--print",
@@ -241,6 +245,8 @@ def count_ncs_videos() -> int:
     """Count total videos on the NCS YouTube channel."""
     cmd = [
         "yt-dlp",
+        "--js-runtimes", "node",
+        "--remote-components", "ejs:github",
         NCS_CHANNEL_URL,
         "--flat-playlist",
         "--print",

@@ -4,7 +4,6 @@ import os
 
 from ..cmd._shared import _download_and_report, _print_table, _resolve_search
 from ..downloader import (
-    SUPPORTED_FORMATS,
     get_existing_songs,
     save_queue,
 )
@@ -12,12 +11,7 @@ from ..downloader import (
 
 def run(args) -> int:
     output_dir = args.output or os.path.expanduser("~/ncs_downloads")
-    audio_format = args.format or "m4a"
     embed_thumbnail = not args.no_thumbnail
-
-    if audio_format not in SUPPORTED_FORMATS:
-        print(f"unsupported format: {audio_format}")
-        return 1
 
     existing = set()
     if not args.no_check_dupes:
@@ -43,8 +37,7 @@ def run(args) -> int:
 
     return _download_and_report(
         videos, output_dir, existing,
-        audio_format, embed_thumbnail, args.retries,
+        embed_thumbnail, args.retries,
         cookies_from_browser=args.cookies_from_browser,
         cookies_file=args.cookies_file,
-        download_unwanted_formats=args.download_unwanted_formats,
     )
