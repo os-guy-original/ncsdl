@@ -76,6 +76,9 @@ def check_dependencies() -> list[str]:
     return missing
 
 
+NCS_CHANNEL_ID = "UC_aEa8K-EOJ3D6gOs7H1Ngw"
+
+
 @dataclass
 class VideoInfo:
     """Information about a YouTube video."""
@@ -84,6 +87,7 @@ class VideoInfo:
     url: str
     duration: str
     parsed: Optional[ParsedTitle] = None
+    channel_id: str = ""
 
 
 def _parse_ytdlp_line(line: str) -> Optional[tuple[str, str, str, str]]:
@@ -181,6 +185,57 @@ def _run_ytdlp(cmd: list[str], timeout: int) -> str:
     except subprocess.TimeoutExpired:
         print("search timed out. try reducing max_results.", file=sys.stderr)
         return ""
+
+
+def fetch_video_info(video_id: str) -> Optional[VideoInfo]:
+    """Fetch video info for a specific YouTube video ID.
+
+    Returns VideoInfo if found, None on error.
+    """
+    url = f"https://www.youtube.com/watch?v={video_id}"
+    cmd = [
+        "yt-dlp",
+        "--js-runtimes", "node",
+        "--remote-components", "ejs:github",
+        url,
+        "--print",
+        "%(id)s|%(title)s|%(url)s|%(duration_string)s|%(channel_id)s",
+        "--no-download",
+        "--no-playlist",
+    ]
+
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            stdin=subprocess.DEVNULL,
+        )
+    except subprocess.TimeoutExpired:
+        return None
+
+    if result.returncode != 0:
+        return None
+
+    for line in result.stdout.splitlines():
+        parsed_line = _parse_ytdlp_line(line)
+        if parsed_line is None:
+            continue
+        vid, title, vid_url, duration = parsed_line
+        channel_id = ""
+        if "|" in duration:
+            duration, channel_id = duration.rsplit("|", 1)
+        return VideoInfo(
+            video_id=vid,
+            title=title,
+            url=vid_url,
+            duration=duration,
+            parsed=parse_title(title),
+            channel_id=channel_id,
+        )
+
+    return None
 
 
 def search_ncs_videos(

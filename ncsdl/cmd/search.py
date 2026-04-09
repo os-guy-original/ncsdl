@@ -35,5 +35,5 @@ def run(args) -> int:
         return 1
 
     print(f"found {len(videos)} result(s)\n")
-    _print_table(videos, index=True)
+    _print_table(videos)
     return 0

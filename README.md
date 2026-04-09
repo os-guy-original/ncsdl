@@ -77,6 +77,8 @@ python -m ncsdl search "Heroes Tonight"
 python -m ncsdl search "Trap" --limit 20
 ```
 
+Search results show video IDs that can be used with `ncsdl download <ID>`.
+
 ### List Genres
 
 View all supported NCS genres:
@@ -89,10 +91,16 @@ python -m ncsdl list-genres --verbose --show-empty
 
 ### Download Songs
 
-Download by genre, or the entire library:
+Download by video ID, by genre, or the entire library:
 
 ```bash
-# Download Trap songs (M4A with thumbnails, default)
+# Download a specific song by video ID
+python -m ncsdl download cj-HnSUqx3w
+
+# Download with output directory
+python -m ncsdl download cj-HnSUqx3w --output ~/music/ncs
+
+# Download by genre (Trap songs with thumbnails, default)
 python -m ncsdl download --genre Trap
 
 # Download entire NCS library

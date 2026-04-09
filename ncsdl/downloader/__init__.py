@@ -20,6 +20,7 @@ from .search import (
     VideoInfo,
     check_dependencies,
     count_ncs_videos,
+    fetch_video_info,
     get_all_ncs_videos,
     search_ncs_videos,
 )
@@ -40,6 +41,7 @@ __all__ = [
     "get_ncsdl_id",
     "sanitize_filename",
     "search_ncs_videos",
+    "fetch_video_info",
     "get_all_ncs_videos",
     "count_ncs_videos",
     "save_queue",

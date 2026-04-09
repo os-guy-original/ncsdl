@@ -22,12 +22,11 @@ def _resolve_search(genre: str | None, limit: int, include_mixes: bool = False) 
     return search_ncs_videos(genre=genre, max_results=limit, include_mixes=include_mixes), f"NCS {genre} tracks"
 
 
-def _print_table(videos: list, *, index: bool = False) -> None:
-    """Print videos in a clean table."""
-    for i, v in enumerate(videos, 1):
+def _print_table(videos: list) -> None:
+    """Print videos in a clean table with video IDs."""
+    for v in videos:
         genre = v.parsed.genre if v.parsed else "?"
-        prefix = f"  {i:>4}. " if index else "  "
-        print(f"{prefix}{v.title} [{genre}]")
+        print(f"  {v.video_id}  {v.title} [{genre}]")
 
 
 def _download_and_report(
