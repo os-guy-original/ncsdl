@@ -179,9 +179,11 @@ RE_OLD = re.compile(
 # Also: "Artist - Song Genre NCS13 - Copyright Free Music" (inline genre)
 # Also accepts en-dash (\u2013), NCS10/NCS13 suffixes
 # Genre is extracted from end of title in _finalize_title()
+# Note: Title may contain pipe separators that need to be stripped
 RE_COLLAB = re.compile(
     r"^(?P<artist>.+?)\s+[\u002d\u2013]\s+"
-    r"(?P<title>.+?)"
+    r"(?P<title>[^|]+?)"
+    r"(?:\s*\|.*)?"
     r"\s+NCS\d*\b"
     r"(?:\s*-\s*Copyright\s+Free\s+Music)?\s*$",
     re.IGNORECASE,
@@ -189,9 +191,11 @@ RE_COLLAB = re.compile(
 
 # Bare format: "Artist - Song" or "Artist - Song NCS - Copyright Free Music"
 # The suffix is optional and gets stripped from the title group
+# Note: Title may contain pipe separators that need to be stripped
 RE_BARE = re.compile(
     r"^(?P<artist>[^-]+?)\s+-\s+"
-    r"(?P<title>.+?)"
+    r"(?P<title>[^|]+?)"
+    r"(?:\s*\|.*)?"
     r"(?:\s+NCS\s*-\s*Copyright\s+Free\s+Music)?\s*$"
 )
 
