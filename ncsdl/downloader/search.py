@@ -57,11 +57,10 @@ _COMPILATION_PATTERNS = frozenset({
     "ncs 202",
     "biggest ncs",
     "biggest nocopyrightsounds",
-    # Hour mixes (format: "X Hour", "X Hours", "X Hour Mix")
-    " hour mix",
-    " hours",
-    " hour",
 })
+
+# Regex to match hour-based mixes like "1 Hour", "3 Hours", "1 Hour Mix"
+_HOUR_MIX_RE = re.compile(r"\d+\s+hours?\b", re.IGNORECASE)
 
 
 def check_dependencies() -> list[str]:
@@ -121,6 +120,10 @@ def _is_compilation(title: str, duration: str) -> bool:
     for pattern in _COMPILATION_PATTERNS:
         if pattern in title_lower:
             return True
+
+    # Check for hour-based mixes like "1 Hour", "3 Hours"
+    if _HOUR_MIX_RE.search(title):
+        return True
 
     if ":" in duration:
         parts = duration.split(":")
