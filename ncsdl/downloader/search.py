@@ -39,8 +39,6 @@ _COMPILATION_PATTERNS = frozenset({
     "heavy gaming",
     "halloween songs",
     "feels like summer",
-    "3 hours",
-    "1 hour mix",
     "best of ",
     "best of 20",
     "best of 201",
@@ -59,6 +57,10 @@ _COMPILATION_PATTERNS = frozenset({
     "ncs 202",
     "biggest ncs",
     "biggest nocopyrightsounds",
+    # Hour mixes (format: "X Hour", "X Hours", "X Hour Mix")
+    " hour mix",
+    " hours",
+    " hour",
 })
 
 
