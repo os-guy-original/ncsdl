@@ -3,13 +3,14 @@
 from ..downloader import get_all_ncs_videos, search_ncs_videos
 from ..cmd._shared import _print_table
 from ..styles import get_genres
+from ..logger import logger
 
 
 def run(args) -> int:
     pattern = args.pattern.lower()
     limit = args.limit
 
-    print(f"searching for '{args.pattern}'...")
+    logger.info(f"Searching for '{args.pattern}'...")
 
     genres = get_genres()
     genre_match = None
@@ -31,9 +32,10 @@ def run(args) -> int:
         ][:limit]
 
     if not videos:
-        print("no results found.")
+        logger.warning("No results found.")
         return 1
 
-    print(f"found {len(videos)} result(s)\n")
+    logger.info(f"Found {len(videos)} result(s)")
+    logger.heading("Search Results")
     _print_table(videos)
     return 0

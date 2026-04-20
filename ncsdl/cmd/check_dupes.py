@@ -6,23 +6,25 @@ from ..downloader import get_existing_songs
 
 
 def run(args) -> int:
+    from ..logger import logger
     directory = args.directory
+    
     if not os.path.isdir(directory):
-        print(f"directory not found: {directory}")
+        logger.error(f"Directory not found: {directory}")
         return 1
 
     existing = get_existing_songs(directory)
 
     if not existing:
-        print(f"no audio files found in {directory}")
+        logger.warning(f"No audio files found in {directory}")
         return 0
 
     songs = sorted(existing)
-    print(f"found {len(songs)} unique song(s) in {directory}")
+    logger.info(f"Found {len(songs)} unique song(s) in {directory}")
 
     if args.verbose:
-        print()
+        logger.heading("Song List")
         for name in songs:
-            print(f"  {name}")
+            logger.info(f"  {name}")
 
     return 0

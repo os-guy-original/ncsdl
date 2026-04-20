@@ -1,6 +1,7 @@
 """detect-genres command."""
 
 from ..styles import detect_genres, get_genres
+from ..logger import logger
 
 
 def run(args) -> int:
@@ -9,26 +10,30 @@ def run(args) -> int:
         cache = os.path.join(os.path.dirname(os.path.dirname(__file__)), "genres.json")
         if os.path.exists(cache):
             os.remove(cache)
-        print("detecting genres from NCS YouTube channel (this may take a moment)...")
+        logger.info("Detecting genres from NCS YouTube channel (this may take a moment)...")
     else:
-        print("loading cached genres...")
+        logger.info("Loading cached genres...")
 
     genres = get_genres()
     if not genres:
         genres = detect_genres()
 
     if not genres:
-        print("failed to detect genres.")
+        logger.error("Failed to detect genres.")
         return 1
 
+    logger.heading("Detected Genres")
     cols = 3
     col_width = 25
+    current_line = []
     for i, genre in enumerate(sorted(genres, key=str.lower), 1):
-        print(f"{genre:<{col_width}}", end="")
+        current_line.append(f"{genre:<{col_width}}")
         if i % cols == 0:
-            print()
-    if len(genres) % cols:
-        print()
+            logger.info("".join(current_line))
+            current_line = []
+    if current_line:
+        logger.info("".join(current_line))
 
-    print(f"\ntotal genres: {len(genres)}")
+    logger.heading("Summary")
+    logger.success(f"Total genres: {len(genres)}")
     return 0

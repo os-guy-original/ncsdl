@@ -9,6 +9,7 @@ from ..downloader import (
     get_existing_songs,
     load_queue,
 )
+from ..logger import logger
 
 
 def run(args) -> int:
@@ -17,21 +18,21 @@ def run(args) -> int:
 
     queue = load_queue(output_dir)
     if not queue:
-        print(f"no saved queue found in {output_dir}")
-        print("run 'ncsdl download' first to create a queue.")
+        logger.error(f"No saved queue found in {output_dir}")
+        logger.info("Run 'ncsdl download' first to create a queue.")
         return 1
 
-    print(f"loaded {len(queue)} video(s) from queue")
+    logger.info(f"Loaded {len(queue)} video(s) from queue")
 
     existing = get_existing_songs(output_dir)
     remaining = filter_downloaded(queue, existing)
 
     if not remaining:
-        print("all videos already downloaded.")
+        logger.success("All videos already downloaded.")
         clear_queue(output_dir)
         return 0
 
-    print(f"{len(remaining)} video(s) remaining to download")
+    logger.info(f"{len(remaining)} video(s) remaining to download")
 
     result = _download_and_report(
         remaining, output_dir, existing,

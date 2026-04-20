@@ -39,14 +39,16 @@ def _download_and_report(
     cookies_file: str | None = None,
 ) -> int:
     """Run download and print summary. Returns exit code."""
-    print()
-    print(f"format: m4a  |  thumbnails: {'yes' if embed_thumbnail else 'no'}")
-    print(f"output: {output_dir}")
+    from ..logger import logger, CLR_BOLD, CLR_RESET
+
+    logger.heading("Download Session")
+    logger.info(f"Format: {CLR_BOLD}m4a{CLR_RESET}  |  Thumbnails: {CLR_BOLD}{'yes' if embed_thumbnail else 'no'}{CLR_RESET}")
+    logger.info(f"Output: {CLR_BOLD}{output_dir}{CLR_RESET}")
     if cookies_from_browser:
-        print(f"cookies: from {cookies_from_browser} browser")
+        logger.info(f"Cookies: from {cookies_from_browser} browser")
     if cookies_file:
-        print(f"cookies: from {cookies_file}")
-    print("-" * 40)
+        logger.info(f"Cookies: from {cookies_file}")
+    logger.dim("-" * 40)
 
     downloaded, renamed, redownloaded, skipped, fail, errors = download_videos(
         videos,
@@ -58,15 +60,18 @@ def _download_and_report(
         cookies_file=cookies_file,
     )
 
-    print()
-    print(f"done: {downloaded} downloaded, {renamed} renamed, {redownloaded} re-downloaded, {skipped} skipped, {fail} failed")
+    logger.heading("Session Summary")
+    summary = f"{downloaded} downloaded, {renamed} renamed, {redownloaded} re-downloaded, {skipped} skipped, {fail} failed"
+    if fail == 0:
+        logger.success(summary)
+    else:
+        logger.warning(summary)
 
     if errors:
-        print()
-        print("errors:")
+        logger.heading("Errors")
         for err in errors[:10]:
-            print(f"  - {err}")
+            logger.error(err)
         if len(errors) > 10:
-            print(f"  ... and {len(errors) - 10} more")
+            logger.dim(f"  ... and {len(errors) - 10} more")
 
     return 0 if fail == 0 else 1

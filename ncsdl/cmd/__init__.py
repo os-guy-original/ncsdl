@@ -7,6 +7,8 @@ from .detect_genres import run as cmd_detect_genres
 from .download import run as cmd_download
 from .list_genres import run as cmd_list_genres
 from .metadata import run as cmd_metadata
+from .migrate import run as cmd_migrate
+from .rename import run as cmd_rename
 from .resume import run as cmd_resume
 from .search import run as cmd_search
 from .stats import run as cmd_stats
@@ -27,4 +29,6 @@ COMMANDS = {
     "metadata": cmd_metadata,
     "meta": cmd_metadata,
     "check-dupes": cmd_check_dupes,
+    "migrate": cmd_migrate,
+    "rename": cmd_rename,
 }

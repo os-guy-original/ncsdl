@@ -5,18 +5,20 @@ from pathlib import Path
 
 
 def run(args) -> int:
+    from ..logger import logger
     directory = args.directory
+    
     if not os.path.isdir(directory):
-        print(f"directory not found: {directory}")
+        logger.error(f"Directory not found: {directory}")
         return 1
 
-    dir_path = Path(directory)
-    audio_exts = {".mp3", ".m4a", ".flac", ".opus", ".ogg", ".wav"}
-
-    files = [f for f in dir_path.iterdir() if f.is_file() and f.suffix.lower() in audio_exts]
+    dir_path = Path(directory).expanduser().resolve()
+    from ..downloader.files import _AUDIO_EXTENSIONS
+    
+    files = [f for f in dir_path.iterdir() if f.is_file() and f.suffix.lower() in _AUDIO_EXTENSIONS]
 
     if not files:
-        print(f"no audio files found in {directory}")
+        logger.warning(f"No audio files found in {directory}")
         return 0
 
     total_size = sum(f.stat().st_size for f in files)
@@ -29,29 +31,27 @@ def run(args) -> int:
         if genre:
             genres_detected[genre] = genres_detected.get(genre, 0) + 1
 
-    print(f"Directory: {directory}")
-    print()
-    print(f"{'Metric':<20} {'Value':>15}")
-    print("-" * 37)
-    print(f"{'Total files':<20} {len(files):>15}")
-    print(f"{'Total size':<20} {total_size / 1024 / 1024:>14.1f} MB")
-    print(f"{'Avg file size':<20} {total_size / len(files) / 1024:>14.1f} KB")
-    print(f"{'Genres detected':<20} {len(genres_detected):>15}")
+    logger.heading("Library Statistics")
+    logger.info(f"Directory: {dir_path}")
+    
+    logger.info("-" * 40)
+    logger.info(f"{'Total files':<25} {len(files):>14}")
+    logger.info(f"{'Total size':<25} {total_size / 1024 / 1024:>13.1f} MB")
+    logger.info(f"{'Avg file size':<25} {total_size / len(files) / 1024:>13.1f} KB")
+    logger.info(f"{'Genres detected':<25} {len(genres_detected):>14}")
 
     if genres_detected:
-        print()
-        print("Genre Breakdown")
-        print(f"{'Genre':<20} {'Count':>5}")
-        print("-" * 27)
+        logger.heading("Genre Breakdown")
+        logger.info(f"{'Genre':<25} {'Count':>14}")
+        logger.dim("-" * 40)
         for genre, count in sorted(genres_detected.items(), key=lambda x: x[1], reverse=True):
-            print(f"{genre:<20} {count:>5}")
+            logger.info(f"{genre:<25} {count:>14}")
 
-    print()
-    print("Format Breakdown")
-    print(f"{'Format':<20} {'Count':>5}")
-    print("-" * 27)
+    logger.heading("Format Breakdown")
+    logger.info(f"{'Format':<25} {'Count':>14}")
+    logger.dim("-" * 40)
     for ext, count in sorted(ext_counts.items(), key=lambda x: x[1], reverse=True):
-        print(f"{ext:<20} {count:>5}")
+        logger.info(f"{ext:<25} {count:>14}")
 
     return 0
 

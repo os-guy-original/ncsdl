@@ -10,6 +10,7 @@ from ..downloader import (
     save_queue,
 )
 from ..downloader.search import NCS_CHANNEL_ID
+from ..logger import logger
 
 _YT_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{11}$")
 
@@ -21,20 +22,20 @@ def run(args) -> int:
     # Download specific video by ID
     if args.video_id:
         if not _YT_ID_RE.match(args.video_id):
-            print(f"invalid video ID: {args.video_id} (must be 11 characters, alphanumeric/dash/underscore)")
+            logger.error(f"Invalid video ID: {args.video_id} (must be 11 characters, alphanumeric/dash/underscore)")
             return 1
 
-        print(f"fetching info for {args.video_id}...")
+        logger.info(f"Fetching info for {args.video_id}...")
         video = fetch_video_info(args.video_id)
         if not video:
-            print(f"could not find video: {args.video_id}")
+            logger.error(f"Could not find video: {args.video_id}")
             return 1
 
-        print(f"found: {video.title}")
+        logger.info(f"Found: {video.title}")
 
         if video.channel_id and video.channel_id != NCS_CHANNEL_ID:
-            print(f"error: video {args.video_id} is not from the NCS YouTube channel (NoCopyrightSounds).")
-            print("This tool is designed for downloading songs from the NCS channel only.")
+            logger.error(f"Video {args.video_id} is not from the NCS YouTube channel.")
+            logger.info("This tool is designed for downloading songs from the NCS channel only.")
             return 1
 
         existing = get_existing_songs(output_dir)
@@ -52,19 +53,20 @@ def run(args) -> int:
     if not args.no_check_dupes:
         existing = get_existing_songs(output_dir)
         if existing:
-            print(f"found {len(existing)} existing song(s) in {output_dir}")
+            logger.info(f"Found {len(existing)} existing song(s) in {output_dir}")
 
-    print(f"searching {_resolve_search(args.genre, args.limit, args.include_mixes)[1]}...")
+    search_desc = _resolve_search(args.genre, args.limit, args.include_mixes)[1]
+    logger.info(f"Searching {search_desc}...")
     videos, _ = _resolve_search(args.genre, args.limit, args.include_mixes)
 
     if not videos:
-        print("no videos found.")
+        logger.warning("No videos found.")
         return 1
 
-    print(f"found {len(videos)} video(s)")
+    logger.info(f"Found {len(videos)} video(s)")
 
     if args.list_only:
-        print()
+        logger.heading("Video List")
         _print_table(videos)
         return 0
 

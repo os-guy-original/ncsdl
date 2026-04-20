@@ -9,6 +9,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from ..logger import logger
 
 from ..styles import build_tag_values
 from .files import (
@@ -508,10 +509,10 @@ def download_videos(
                 skipped += 1
         else:
             fail += 1
-            errors.append(msg)
-            print(f"[{i}/{len(videos)}] {msg}")
-            continue
-
-        print(f"[{i}/{len(videos)}] {msg}")
+        display_msg = msg
+        if msg.startswith(f"{status}: "):
+            display_msg = msg[len(status) + 2:]
+        
+        logger.progress(i, len(videos), status, display_msg)
 
     return downloaded, renamed, redownloaded, skipped, fail, errors
